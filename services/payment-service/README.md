@@ -21,7 +21,7 @@ Owns payment records and a mock payment lifecycle for local development.
 
 Protected through APISIX and Keycloak except for health.
 
-Send `Idempotency-Key` on payment creation to make retries safe. A repeated key for the same user returns the original payment with `meta.idempotent_replay=true`.
+Send `Idempotency-Key` on payment creation to make retries safe. A repeated key for the same user and identical payload returns the original payment with `meta.idempotent_replay=true`. Reusing the same key with a different payload returns `409`.
 
 ```http
 GET /api/payments/health

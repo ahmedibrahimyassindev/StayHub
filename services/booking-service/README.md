@@ -46,7 +46,7 @@ Create booking:
 
 Booking creation derives `user_id` from trusted gateway identity, reserves inventory first by calling `inventory-service`, calculates `total_amount` and `currency` from inventory pricing, creates the booking as `pending_payment`, creates a pending mock payment in `payment-service`, and records notification work in the transactional outbox. If inventory is unavailable, the API returns `409 Conflict` and no booking row is created.
 
-Send `Idempotency-Key` on booking creation to make client retries safe. A repeated key for the same authenticated user returns the original booking with `meta.idempotent_replay=true` instead of reserving inventory or creating another payment again.
+Send `Idempotency-Key` on booking creation to make client retries safe. A repeated key for the same authenticated user and identical payload returns the original booking with `meta.idempotent_replay=true` instead of reserving inventory or creating another payment again. Reusing the same key with a different payload returns `409`.
 
 Payment confirmation marks the mock payment as succeeded, changes the booking to `confirmed`, marks the booking Saga completed, and records a confirmation notification event.
 

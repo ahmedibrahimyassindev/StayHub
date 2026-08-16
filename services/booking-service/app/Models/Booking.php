@@ -22,6 +22,7 @@ use Illuminate\Validation\ValidationException;
     'currency',
     'payment_id',
     'idempotency_key',
+    'request_hash',
     'saga_id',
     'saga_state',
     'saga_error',

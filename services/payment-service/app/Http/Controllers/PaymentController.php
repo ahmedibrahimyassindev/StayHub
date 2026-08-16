@@ -43,6 +43,7 @@ class PaymentController extends Controller
         ]);
 
         $idempotencyKey = $this->normalizeIdempotencyKey($request->headers->get('Idempotency-Key'));
+        $requestHash = $this->requestHash($validated);
 
         if ($idempotencyKey !== null) {
             $existingPayment = Payment::query()
@@ -51,6 +52,10 @@ class PaymentController extends Controller
                 ->first();
 
             if ($existingPayment !== null) {
+                if ($existingPayment->request_hash !== null && $existingPayment->request_hash !== $requestHash) {
+                    return $this->idempotencyConflict();
+                }
+
                 return response()->json([
                     'data' => $existingPayment,
                     'meta' => [
@@ -67,6 +72,7 @@ class PaymentController extends Controller
                 'provider' => $validated['provider'] ?? 'mock',
                 'provider_reference' => 'mock_' . Str::uuid(),
                 'idempotency_key' => $idempotencyKey,
+                'request_hash' => $requestHash,
                 'status' => PaymentStatus::Pending,
             ]);
         } catch (QueryException $exception) {
@@ -77,6 +83,10 @@ class PaymentController extends Controller
                     ->first();
 
                 if ($existingPayment !== null) {
+                    if ($existingPayment->request_hash !== null && $existingPayment->request_hash !== $requestHash) {
+                        return $this->idempotencyConflict();
+                    }
+
                     return response()->json([
                         'data' => $existingPayment,
                         'meta' => [
@@ -169,6 +179,29 @@ class PaymentController extends Controller
         $idempotencyKey = trim((string) $idempotencyKey);
 
         return $idempotencyKey === '' ? null : $idempotencyKey;
+    }
+
+    /**
+     * @param array<string, mixed> $payment
+     */
+    private function requestHash(array $payment): string
+    {
+        $fingerprint = [
+            'booking_id' => (int) $payment['booking_id'],
+            'user_id' => (int) $payment['user_id'],
+            'amount' => number_format((float) $payment['amount'], 2, '.', ''),
+            'currency' => strtoupper((string) $payment['currency']),
+            'provider' => (string) ($payment['provider'] ?? 'mock'),
+        ];
+
+        return hash('sha256', json_encode($fingerprint, JSON_THROW_ON_ERROR));
+    }
+
+    private function idempotencyConflict(): JsonResponse
+    {
+        return response()->json([
+            'message' => 'Idempotency key was already used with a different request payload.',
+        ], 409);
     }
 
     /**

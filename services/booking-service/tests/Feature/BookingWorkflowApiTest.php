@@ -140,6 +140,53 @@ class BookingWorkflowApiTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    public function test_booking_creation_rejects_same_idempotency_key_with_different_payload(): void
+    {
+        config([
+            'services.inventory.url' => 'http://inventory-service:8000',
+            'services.payment.url' => 'http://payment-service:8000',
+            'services.notification.url' => 'http://notification-service:8000',
+        ]);
+
+        Http::fake([
+            'inventory-service:8000/api/inventory/reservations' => Http::response([
+                'data' => [
+                    'nights_reserved' => 1,
+                    'total_amount' => '180.00',
+                    'currency' => 'USD',
+                ],
+            ]),
+            'payment-service:8000/api/payments' => Http::response([
+                'data' => ['id' => 99, 'status' => 'pending'],
+            ], 201),
+        ]);
+
+        $headers = [
+            'X-Test-User-Id' => '1',
+            'Idempotency-Key' => 'booking-create-conflict',
+        ];
+
+        $this->postJson('/api/bookings', [
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-02',
+            'quantity' => 1,
+        ], $headers)->assertCreated();
+
+        $this->postJson('/api/bookings', [
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-03',
+            'quantity' => 1,
+        ], $headers)->assertConflict()
+            ->assertJsonPath('message', 'Idempotency key was already used with a different request payload.');
+
+        $this->assertDatabaseCount('bookings', 1);
+        Http::assertSentCount(2);
+    }
+
     public function test_inventory_unavailable_does_not_create_booking_or_payment(): void
     {
         config([

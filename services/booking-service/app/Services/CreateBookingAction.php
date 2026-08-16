@@ -25,6 +25,8 @@ class CreateBookingAction
     public function execute(array $bookingData, int $userId, ?string $idempotencyKey): JsonResponse
     {
         $idempotencyKey = $this->normalizeIdempotencyKey($idempotencyKey);
+        $quantity = $bookingData['quantity'] ?? 1;
+        $requestHash = $this->requestHash($bookingData, $quantity);
 
         if ($idempotencyKey !== null) {
             $existingBooking = Booking::query()
@@ -33,6 +35,10 @@ class CreateBookingAction
                 ->first();
 
             if ($existingBooking !== null) {
+                if ($existingBooking->request_hash !== null && $existingBooking->request_hash !== $requestHash) {
+                    return $this->idempotencyConflict();
+                }
+
                 return response()->json([
                     'data' => [
                         'booking' => $existingBooking,
@@ -46,7 +52,6 @@ class CreateBookingAction
             }
         }
 
-        $quantity = $bookingData['quantity'] ?? 1;
         $inventoryPayload = $this->inventoryPayload($bookingData, $quantity);
         $reservation = $this->inventory->post('/api/inventory/reservations', $inventoryPayload);
 
@@ -63,7 +68,7 @@ class CreateBookingAction
         }
 
         try {
-            $booking = DB::transaction(function () use ($bookingData, $idempotencyKey, $quantity, $reservation, $userId) {
+            $booking = DB::transaction(function () use ($bookingData, $idempotencyKey, $quantity, $requestHash, $reservation, $userId) {
                 $booking = Booking::query()->create([
                     'user_id' => $userId,
                     'hotel_id' => $bookingData['hotel_id'],
@@ -75,6 +80,7 @@ class CreateBookingAction
                     'total_amount' => $reservation['data']['total_amount'],
                     'currency' => strtoupper($reservation['data']['currency']),
                     'idempotency_key' => $idempotencyKey,
+                    'request_hash' => $requestHash,
                     'saga_id' => (string) Str::uuid(),
                     'saga_state' => BookingSagaState::AwaitingPayment,
                 ]);
@@ -93,6 +99,10 @@ class CreateBookingAction
                     ->first();
 
                 if ($existingBooking !== null) {
+                    if ($existingBooking->request_hash !== null && $existingBooking->request_hash !== $requestHash) {
+                        return $this->idempotencyConflict();
+                    }
+
                     return response()->json([
                         'data' => [
                             'booking' => $existingBooking,
@@ -189,6 +199,29 @@ class CreateBookingAction
             'check_out' => $booking['check_out'],
             'quantity' => $quantity,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $booking
+     */
+    private function requestHash(array $booking, int $quantity): string
+    {
+        $fingerprint = [
+            'hotel_id' => (int) $booking['hotel_id'],
+            'room_id' => (int) $booking['room_id'],
+            'check_in' => (string) $booking['check_in'],
+            'check_out' => (string) $booking['check_out'],
+            'quantity' => (int) $quantity,
+        ];
+
+        return hash('sha256', json_encode($fingerprint, JSON_THROW_ON_ERROR));
+    }
+
+    private function idempotencyConflict(): JsonResponse
+    {
+        return response()->json([
+            'message' => 'Idempotency key was already used with a different request payload.',
+        ], 409);
     }
 
     private function normalizeIdempotencyKey(?string $idempotencyKey): ?string

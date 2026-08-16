@@ -62,4 +62,28 @@ class PaymentApiTest extends TestCase
 
         $this->assertDatabaseCount('payments', 1);
     }
+
+    public function test_payment_creation_rejects_same_idempotency_key_with_different_payload(): void
+    {
+        $headers = [
+            'Idempotency-Key' => 'payment-create-conflict',
+        ];
+
+        $this->postJson('/api/payments', [
+            'booking_id' => 10,
+            'user_id' => 1,
+            'amount' => 210.00,
+            'currency' => 'usd',
+        ], $headers)->assertCreated();
+
+        $this->postJson('/api/payments', [
+            'booking_id' => 10,
+            'user_id' => 1,
+            'amount' => 220.00,
+            'currency' => 'usd',
+        ], $headers)->assertConflict()
+            ->assertJsonPath('message', 'Idempotency key was already used with a different request payload.');
+
+        $this->assertDatabaseCount('payments', 1);
+    }
 }

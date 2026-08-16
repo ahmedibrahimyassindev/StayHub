@@ -1,0 +1,106 @@
+### APISIX Admin API examples
+### Run these after services exist. Admin API: http://localhost:9180
+
+PUT http://localhost:9180/apisix/admin/routes/hotel-service
+X-API-KEY: stayhub-admin-key
+Content-Type: application/json
+
+{
+  "uri": "/api/hotels/*",
+  "upstream": {
+    "type": "roundrobin",
+    "nodes": {
+      "hotel-service:8000": 1
+    }
+  }
+}
+
+###
+PUT http://localhost:9180/apisix/admin/routes/booking-service
+X-API-KEY: stayhub-admin-key
+Content-Type: application/json
+
+{
+  "uri": "/api/bookings/*",
+  "upstream": {
+    "type": "roundrobin",
+    "nodes": {
+      "booking-service:8000": 1
+    }
+  }
+}
+
+###
+PUT http://localhost:9180/apisix/admin/routes/inventory-service
+X-API-KEY: stayhub-admin-key
+Content-Type: application/json
+
+{
+  "uri": "/api/inventory/*",
+  "upstream": {
+    "type": "roundrobin",
+    "nodes": {
+      "inventory-service:8000": 1
+    }
+  }
+}
+
+###
+PUT http://localhost:9180/apisix/admin/routes/payment-service
+X-API-KEY: stayhub-admin-key
+Content-Type: application/json
+
+{
+  "uri": "/api/payments/*",
+  "upstream": {
+    "type": "roundrobin",
+    "nodes": {
+      "payment-service:8000": 1
+    }
+  }
+}
+
+###
+PUT http://localhost:9180/apisix/admin/routes/search-service
+X-API-KEY: stayhub-admin-key
+Content-Type: application/json
+
+{
+  "uri": "/api/search/*",
+  "upstream": {
+    "type": "roundrobin",
+    "nodes": {
+      "search-service:8000": 1
+    }
+  }
+}
+
+###
+PUT http://localhost:9180/apisix/admin/routes/user-service
+X-API-KEY: stayhub-admin-key
+Content-Type: application/json
+
+{
+  "uri": "/api/users/*",
+  "upstream": {
+    "type": "roundrobin",
+    "nodes": {
+      "user-service:8000": 1
+    }
+  }
+}
+
+###
+PUT http://localhost:9180/apisix/admin/routes/notification-service
+X-API-KEY: stayhub-admin-key
+Content-Type: application/json
+
+{
+  "uri": "/api/notifications/*",
+  "upstream": {
+    "type": "roundrobin",
+    "nodes": {
+      "notification-service:8000": 1
+    }
+  }
+}

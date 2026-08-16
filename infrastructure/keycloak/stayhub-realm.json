@@ -1,0 +1,101 @@
+{
+  "realm": "stayhub",
+  "enabled": true,
+  "displayName": "StayHub",
+  "roles": {
+    "realm": [
+      {
+        "name": "CUSTOMER",
+        "description": "Customer role for searching and booking hotels"
+      },
+      {
+        "name": "HOTEL_MANAGER",
+        "description": "Hotel manager role for managing hotels, rooms, availability, and reservations"
+      },
+      {
+        "name": "ADMIN",
+        "description": "System administrator role"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "stayhub-api",
+      "name": "StayHub API",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "secret": "B6Xz1F7xWF5cn2tbFqBdHlJKE9WzZJn4",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:3000/*",
+        "http://localhost:9080/*"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:9080"
+      ],
+      "attributes": {
+        "access.token.lifespan": "900"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "customer",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Customer",
+      "email": "customer@stayhub.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "username": "manager",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Manager",
+      "email": "manager@stayhub.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "HOTEL_MANAGER"
+      ]
+    },
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "email": "admin@stayhub.local",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMIN"
+      ]
+    }
+  ]
+}

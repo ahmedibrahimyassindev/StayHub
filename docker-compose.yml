@@ -1,0 +1,397 @@
+name: stayhub
+
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.13
+    container_name: stayhub-etcd
+    command:
+      - /usr/local/bin/etcd
+      - --name
+      - etcd
+      - --data-dir
+      - /etcd-data
+      - --listen-client-urls
+      - http://0.0.0.0:2379
+      - --advertise-client-urls
+      - http://etcd:2379
+      - --listen-peer-urls
+      - http://0.0.0.0:2380
+      - --initial-advertise-peer-urls
+      - http://etcd:2380
+      - --initial-cluster
+      - etcd=http://etcd:2380
+      - --initial-cluster-token
+      - stayhub-etcd
+      - --initial-cluster-state
+      - new
+    ports:
+      - "2379:2379"
+    volumes:
+      - etcd_data:/etcd-data
+
+  apisix:
+    image: apache/apisix:3.9.1-debian
+    container_name: stayhub-apisix
+    depends_on:
+      - etcd
+    volumes:
+      - ./gateway/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+    ports:
+      - "9080:9080"
+      - "9443:9443"
+      - "9180:9180"
+
+  keycloak-db:
+    image: postgres:16-alpine
+    container_name: stayhub-keycloak-db
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_DB:-keycloak}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
+    ports:
+      - "54320:5432"
+    volumes:
+      - keycloak_db_data:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: stayhub-keycloak
+    depends_on:
+      - keycloak-db
+    command:
+      - start-dev
+      - --import-realm
+      - --hostname=http://localhost:8080
+      - --hostname-backchannel-dynamic=true
+      - --hostname-strict=false
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: keycloak-db
+      KC_DB_URL_DATABASE: ${KEYCLOAK_DB:-keycloak}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-keycloak}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./infrastructure/keycloak/stayhub-realm.json:/opt/keycloak/data/import/stayhub-realm.json:ro
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: stayhub-kafka
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093,EXTERNAL://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9094:9094"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: stayhub-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  hotel-service:
+    build:
+      context: ./services/hotel-service
+    container_name: stayhub-hotel-service
+    depends_on:
+      - hotel-db
+      - redis
+      - kafka
+      - keycloak
+    environment:
+      APP_NAME: "StayHub Hotel Service"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://hotel-service:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: hotel-db
+      DB_PORT: 5432
+      DB_DATABASE: hotel_db
+      DB_USERNAME: ${POSTGRES_USER:-stayhub}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: stayhub
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./services/hotel-service:/var/www/html
+
+  inventory-service:
+    build:
+      context: ./services/inventory-service
+    container_name: stayhub-inventory-service
+    depends_on:
+      - inventory-db
+      - redis
+      - kafka
+      - keycloak
+    environment:
+      APP_NAME: "StayHub Inventory Service"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://inventory-service:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: inventory-db
+      DB_PORT: 5432
+      DB_DATABASE: inventory_db
+      DB_USERNAME: ${POSTGRES_USER:-stayhub}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: stayhub
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./services/inventory-service:/var/www/html
+
+  booking-service:
+    build:
+      context: ./services/booking-service
+    container_name: stayhub-booking-service
+    depends_on:
+      - booking-db
+      - redis
+      - kafka
+      - keycloak
+    environment:
+      APP_NAME: "StayHub Booking Service"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://booking-service:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: booking-db
+      DB_PORT: 5432
+      DB_DATABASE: booking_db
+      DB_USERNAME: ${POSTGRES_USER:-stayhub}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: stayhub
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./services/booking-service:/var/www/html
+
+  payment-service:
+    build:
+      context: ./services/payment-service
+    container_name: stayhub-payment-service
+    depends_on:
+      - payment-db
+      - redis
+      - kafka
+      - keycloak
+    environment:
+      APP_NAME: "StayHub Payment Service"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://payment-service:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: payment-db
+      DB_PORT: 5432
+      DB_DATABASE: payment_db
+      DB_USERNAME: ${POSTGRES_USER:-stayhub}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: stayhub
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8004:8000"
+    volumes:
+      - ./services/payment-service:/var/www/html
+
+  search-service:
+    build:
+      context: ./services/search-service
+    container_name: stayhub-search-service
+    depends_on:
+      - redis
+      - kafka
+      - keycloak
+    environment:
+      APP_NAME: "StayHub Search Service"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://search-service:8000
+      DB_CONNECTION: sqlite
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: stayhub
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8005:8000"
+    volumes:
+      - ./services/search-service:/var/www/html
+
+  user-service:
+    build:
+      context: ./services/user-service
+    container_name: stayhub-user-service
+    depends_on:
+      - user-db
+      - redis
+      - kafka
+      - keycloak
+    environment:
+      APP_NAME: "StayHub User Service"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://user-service:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: user-db
+      DB_PORT: 5432
+      DB_DATABASE: user_db
+      DB_USERNAME: ${POSTGRES_USER:-stayhub}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: stayhub
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8006:8000"
+    volumes:
+      - ./services/user-service:/var/www/html
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+    container_name: stayhub-notification-service
+    depends_on:
+      - notification-db
+      - redis
+      - kafka
+      - keycloak
+    environment:
+      APP_NAME: "StayHub Notification Service"
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://notification-service:8000
+      DB_CONNECTION: pgsql
+      DB_HOST: notification-db
+      DB_PORT: 5432
+      DB_DATABASE: notification_db
+      DB_USERNAME: ${POSTGRES_USER:-stayhub}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: stayhub
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8007:8000"
+    volumes:
+      - ./services/notification-service:/var/www/html
+
+  hotel-db:
+    image: postgres:16-alpine
+    container_name: stayhub-hotel-db
+    environment:
+      POSTGRES_DB: hotel_db
+      POSTGRES_USER: ${POSTGRES_USER:-stayhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+    ports:
+      - "54321:5432"
+    volumes:
+      - hotel_db_data:/var/lib/postgresql/data
+
+  inventory-db:
+    image: postgres:16-alpine
+    container_name: stayhub-inventory-db
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: ${POSTGRES_USER:-stayhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+    ports:
+      - "54322:5432"
+    volumes:
+      - inventory_db_data:/var/lib/postgresql/data
+
+  booking-db:
+    image: postgres:16-alpine
+    container_name: stayhub-booking-db
+    environment:
+      POSTGRES_DB: booking_db
+      POSTGRES_USER: ${POSTGRES_USER:-stayhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+    ports:
+      - "54323:5432"
+    volumes:
+      - booking_db_data:/var/lib/postgresql/data
+
+  payment-db:
+    image: postgres:16-alpine
+    container_name: stayhub-payment-db
+    environment:
+      POSTGRES_DB: payment_db
+      POSTGRES_USER: ${POSTGRES_USER:-stayhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+    ports:
+      - "54324:5432"
+    volumes:
+      - payment_db_data:/var/lib/postgresql/data
+
+  user-db:
+    image: postgres:16-alpine
+    container_name: stayhub-user-db
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: ${POSTGRES_USER:-stayhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+    ports:
+      - "54325:5432"
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+
+  notification-db:
+    image: postgres:16-alpine
+    container_name: stayhub-notification-db
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: ${POSTGRES_USER:-stayhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stayhub}
+    ports:
+      - "54326:5432"
+    volumes:
+      - notification_db_data:/var/lib/postgresql/data
+
+volumes:
+  etcd_data:
+  keycloak_db_data:
+  kafka_data:
+  redis_data:
+  hotel_db_data:
+  inventory_db_data:
+  booking_db_data:
+  payment_db_data:
+  user_db_data:
+  notification_db_data:

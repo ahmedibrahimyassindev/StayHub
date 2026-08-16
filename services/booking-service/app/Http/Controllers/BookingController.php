@@ -3,16 +3,25 @@
 namespace App\Http\Controllers;
 
 use App\Models\Booking;
-use Illuminate\Http\Client\ConnectionException;
+use App\Services\CreateBookingAction;
+use App\Services\InventoryClient;
+use App\Services\NotificationClient;
+use App\Services\PaymentClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
-use Throwable;
 
 class BookingController extends Controller
 {
+    public function __construct(
+        private readonly CreateBookingAction $createBooking,
+        private readonly InventoryClient $inventory,
+        private readonly PaymentClient $payment,
+        private readonly NotificationClient $notifications,
+    ) {
+    }
+
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -56,72 +65,13 @@ class BookingController extends Controller
         }
 
         $quantity = $validated['quantity'] ?? 1;
-        $inventoryPayload = $this->inventoryPayload($validated, $quantity);
-        $reservation = $this->postInventory('/api/inventory/reservations', $inventoryPayload);
+        $validated['quantity'] = $quantity;
 
-        if ($reservation instanceof JsonResponse) {
-            return $reservation;
-        }
-
-        if (! isset($reservation['data']['total_amount'], $reservation['data']['currency'])) {
-            $this->postInventory('/api/inventory/releases', $inventoryPayload);
-
-            return response()->json([
-                'message' => 'Inventory service did not return authoritative pricing.',
-            ], 502);
-        }
-
-        try {
-            $booking = Booking::query()->create([
-                'user_id' => $identity['user_id'],
-                'hotel_id' => $validated['hotel_id'],
-                'room_id' => $validated['room_id'],
-                'check_in' => $validated['check_in'],
-                'check_out' => $validated['check_out'],
-                'quantity' => $quantity,
-                'status' => Booking::STATUS_PENDING_PAYMENT,
-                'total_amount' => $reservation['data']['total_amount'],
-                'currency' => strtoupper($reservation['data']['currency']),
-            ]);
-        } catch (Throwable $exception) {
-            $this->postInventory('/api/inventory/releases', $inventoryPayload);
-
-            throw $exception;
-        }
-
-        $payment = $this->postPayment('/api/payments', [
-            'booking_id' => $booking->id,
-            'user_id' => $booking->user_id,
-            'amount' => $booking->total_amount,
-            'currency' => $booking->currency,
-            'provider' => 'mock',
-        ]);
-
-        if ($payment instanceof JsonResponse) {
-            $this->postInventory('/api/inventory/releases', $inventoryPayload);
-            $booking->update(['status' => Booking::STATUS_PAYMENT_FAILED]);
-
-            return $payment;
-        }
-
-        $booking->update([
-            'payment_id' => $payment['data']['id'] ?? null,
-        ]);
-
-        $notification = $this->createNotification(
-            $booking->refresh(),
-            'booking.pending_payment',
-            'Your StayHub booking is pending payment',
-            'Complete payment to confirm your booking.',
+        return $this->createBooking->execute(
+            $validated,
+            $identity['user_id'],
+            $request->headers->get('Idempotency-Key'),
         );
-
-        return response()->json([
-            'data' => [
-                'booking' => $booking,
-                'payment' => $payment['data'] ?? $payment,
-                'notification' => $notification,
-            ],
-        ], 201);
     }
 
     public function show(Request $request, Booking $booking): JsonResponse
@@ -151,7 +101,7 @@ class BookingController extends Controller
             ]);
         }
 
-        $release = $this->postInventory('/api/inventory/releases', [
+        $release = $this->inventory->post('/api/inventory/releases', [
             'room_id' => $booking->room_id,
             'check_in' => $booking->check_in->toDateString(),
             'check_out' => $booking->check_out->toDateString(),
@@ -167,7 +117,7 @@ class BookingController extends Controller
             'cancelled_at' => now(),
         ]);
 
-        $notification = $this->createNotification(
+        $notification = $this->notifications->create(
             $booking->refresh(),
             'booking.cancelled',
             'Your StayHub booking was cancelled',
@@ -208,7 +158,7 @@ class BookingController extends Controller
             ], 422);
         }
 
-        $payment = $this->postPayment("/api/payments/{$booking->payment_id}/succeed", []);
+        $payment = $this->payment->post("/api/payments/{$booking->payment_id}/succeed", []);
 
         if ($payment instanceof JsonResponse) {
             return $payment;
@@ -218,7 +168,7 @@ class BookingController extends Controller
             'status' => Booking::STATUS_CONFIRMED,
         ]);
 
-        $notification = $this->createNotification(
+        $notification = $this->notifications->create(
             $booking->refresh(),
             'booking.confirmed',
             'Your StayHub booking is confirmed',
@@ -264,7 +214,7 @@ class BookingController extends Controller
             ], 422);
         }
 
-        $payment = $this->postPayment("/api/payments/{$booking->payment_id}/fail", [
+        $payment = $this->payment->post("/api/payments/{$booking->payment_id}/fail", [
             'failure_reason' => $validated['failure_reason'] ?? 'Payment failed.',
         ]);
 
@@ -282,7 +232,7 @@ class BookingController extends Controller
             'status' => Booking::STATUS_PAYMENT_FAILED,
         ]);
 
-        $notification = $this->createNotification(
+        $notification = $this->notifications->create(
             $booking->refresh(),
             'payment.failed',
             'Your StayHub payment failed',
@@ -298,117 +248,14 @@ class BookingController extends Controller
         ]);
     }
 
-    /**
-     * @param array<string, mixed> $booking
-     * @return array<string, mixed>
-     */
-    private function inventoryPayload(array $booking, int $quantity): array
-    {
-        return [
-            'room_id' => $booking['room_id'],
-            'check_in' => $booking['check_in'],
-            'check_out' => $booking['check_out'],
-            'quantity' => $quantity,
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function postInventory(string $path, array $payload): JsonResponse|array
-    {
-        try {
-            $response = Http::acceptJson()
-                ->timeout(5)
-                ->post(rtrim(config('services.inventory.url'), '/') . $path, $payload);
-        } catch (ConnectionException) {
-            return response()->json([
-                'message' => 'Inventory service is unavailable.',
-            ], 503);
-        }
-
-        if ($response->status() === 409) {
-            return response()->json([
-                'message' => 'Room inventory is not available for the requested stay.',
-                'inventory' => $response->json(),
-            ], 409);
-        }
-
-        if ($response->failed()) {
-            return response()->json([
-                'message' => 'Inventory service rejected the request.',
-                'inventory_status' => $response->status(),
-                'inventory' => $response->json(),
-            ], 502);
-        }
-
-        return $response->json() ?? [];
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function postPayment(string $path, array $payload): JsonResponse|array
-    {
-        try {
-            $response = Http::acceptJson()
-                ->timeout(5)
-                ->post(rtrim(config('services.payment.url'), '/') . $path, $payload);
-        } catch (ConnectionException) {
-            return response()->json([
-                'message' => 'Payment service is unavailable.',
-            ], 503);
-        }
-
-        if ($response->failed()) {
-            return response()->json([
-                'message' => 'Payment service rejected the request.',
-                'payment_status' => $response->status(),
-                'payment' => $response->json(),
-            ], 502);
-        }
-
-        return $response->json() ?? [];
-    }
-
     private function releaseBookingInventory(Booking $booking): JsonResponse|array
     {
-        return $this->postInventory('/api/inventory/releases', [
+        return $this->inventory->post('/api/inventory/releases', [
             'room_id' => $booking->room_id,
             'check_in' => $booking->check_in->toDateString(),
             'check_out' => $booking->check_out->toDateString(),
             'quantity' => $booking->quantity,
         ]);
-    }
-
-    private function createNotification(Booking $booking, string $type, string $subject, string $body): ?array
-    {
-        try {
-            $response = Http::acceptJson()
-                ->timeout(5)
-                ->post(rtrim(config('services.notification.url'), '/') . '/api/notifications', [
-                    'recipient_user_id' => $booking->user_id,
-                    'channel' => 'email',
-                    'type' => $type,
-                    'subject' => $subject,
-                    'body' => $body,
-                    'payload' => [
-                        'booking_id' => $booking->id,
-                        'hotel_id' => $booking->hotel_id,
-                        'room_id' => $booking->room_id,
-                        'payment_id' => $booking->payment_id,
-                        'status' => $booking->status,
-                    ],
-                ]);
-        } catch (Throwable) {
-            return null;
-        }
-
-        if ($response->failed()) {
-            return null;
-        }
-
-        return $response->json('data');
     }
 
     /**

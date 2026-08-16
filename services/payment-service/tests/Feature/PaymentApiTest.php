@@ -35,4 +35,31 @@ class PaymentApiTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.status', Payment::STATUS_REFUNDED);
     }
+
+    public function test_payment_creation_is_idempotent_for_same_user_and_key(): void
+    {
+        $payload = [
+            'booking_id' => 10,
+            'user_id' => 1,
+            'amount' => 210.00,
+            'currency' => 'usd',
+        ];
+        $headers = [
+            'Idempotency-Key' => 'payment-create-1',
+        ];
+
+        $paymentId = $this->postJson('/api/payments', $payload, $headers)
+            ->assertCreated()
+            ->assertJsonPath('data.status', Payment::STATUS_PENDING)
+            ->assertJsonPath('data.idempotency_key', 'payment-create-1')
+            ->assertJsonPath('meta.idempotent_replay', false)
+            ->json('data.id');
+
+        $this->postJson('/api/payments', $payload, $headers)
+            ->assertOk()
+            ->assertJsonPath('data.id', $paymentId)
+            ->assertJsonPath('meta.idempotent_replay', true);
+
+        $this->assertDatabaseCount('payments', 1);
+    }
 }

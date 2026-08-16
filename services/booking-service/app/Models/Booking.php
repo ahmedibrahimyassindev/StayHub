@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Model;
     'total_amount',
     'currency',
     'payment_id',
+    'idempotency_key',
     'cancelled_at',
 ])]
 class Booking extends Model

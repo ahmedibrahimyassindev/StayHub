@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
     'status',
     'provider',
     'provider_reference',
+    'idempotency_key',
     'failure_reason',
     'paid_at',
     'refunded_at',

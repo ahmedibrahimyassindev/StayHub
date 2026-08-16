@@ -48,7 +48,8 @@ class BookingWorkflowApiTest extends TestCase
             ->assertJsonPath('data.booking.payment_id', 99)
             ->assertJsonPath('data.booking.total_amount', '360.00')
             ->assertJsonPath('data.booking.currency', 'USD')
-            ->assertJsonPath('data.notification.type', 'booking.pending_payment');
+            ->assertJsonPath('data.notification.type', 'booking.pending_payment')
+            ->assertJsonPath('meta.idempotent_replay', false);
 
         $this->assertDatabaseHas('bookings', [
             'user_id' => 1,
@@ -63,6 +64,58 @@ class BookingWorkflowApiTest extends TestCase
             && $request['user_id'] === 1
             && $request['amount'] === '360.00'
             && $request['currency'] === 'USD');
+    }
+
+    public function test_booking_creation_is_idempotent_for_same_user_and_key(): void
+    {
+        config([
+            'services.inventory.url' => 'http://inventory-service:8000',
+            'services.payment.url' => 'http://payment-service:8000',
+            'services.notification.url' => 'http://notification-service:8000',
+        ]);
+
+        Http::fake([
+            'inventory-service:8000/api/inventory/reservations' => Http::response([
+                'data' => [
+                    'nights_reserved' => 1,
+                    'total_amount' => '180.00',
+                    'currency' => 'USD',
+                ],
+            ]),
+            'payment-service:8000/api/payments' => Http::response([
+                'data' => ['id' => 99, 'status' => 'pending'],
+            ], 201),
+            'notification-service:8000/api/notifications' => Http::response([
+                'data' => ['id' => 100, 'type' => 'booking.pending_payment'],
+            ], 201),
+        ]);
+
+        $payload = [
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-02',
+            'quantity' => 1,
+        ];
+        $headers = [
+            'X-StayHub-User-Id' => '1',
+            'Idempotency-Key' => 'booking-create-1',
+        ];
+
+        $bookingId = $this->postJson('/api/bookings', $payload, $headers)
+            ->assertCreated()
+            ->assertJsonPath('meta.idempotent_replay', false)
+            ->json('data.booking.id');
+
+        $this->postJson('/api/bookings', $payload, $headers)
+            ->assertOk()
+            ->assertJsonPath('data.booking.id', $bookingId)
+            ->assertJsonPath('data.booking.idempotency_key', 'booking-create-1')
+            ->assertJsonPath('data.payment', null)
+            ->assertJsonPath('meta.idempotent_replay', true);
+
+        $this->assertDatabaseCount('bookings', 1);
+        Http::assertSentCount(3);
     }
 
     public function test_payment_failure_releases_inventory_and_marks_booking_failed(): void

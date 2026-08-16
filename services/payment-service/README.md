@@ -21,6 +21,8 @@ Owns payment records and a mock payment lifecycle for local development.
 
 Protected through APISIX and Keycloak except for health.
 
+Send `Idempotency-Key` on payment creation to make retries safe. A repeated key for the same user returns the original payment with `meta.idempotent_replay=true`.
+
 ```http
 GET /api/payments/health
 GET /api/payments?booking_id=1&status=pending

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Payment;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -40,16 +41,58 @@ class PaymentController extends Controller
             'provider' => ['sometimes', 'string', 'max:40'],
         ]);
 
-        $payment = Payment::query()->create([
-            ...$validated,
-            'currency' => strtoupper($validated['currency']),
-            'provider' => $validated['provider'] ?? 'mock',
-            'provider_reference' => 'mock_' . Str::uuid(),
-            'status' => Payment::STATUS_PENDING,
-        ]);
+        $idempotencyKey = $this->normalizeIdempotencyKey($request->headers->get('Idempotency-Key'));
+
+        if ($idempotencyKey !== null) {
+            $existingPayment = Payment::query()
+                ->where('user_id', $validated['user_id'])
+                ->where('idempotency_key', $idempotencyKey)
+                ->first();
+
+            if ($existingPayment !== null) {
+                return response()->json([
+                    'data' => $existingPayment,
+                    'meta' => [
+                        'idempotent_replay' => true,
+                    ],
+                ]);
+            }
+        }
+
+        try {
+            $payment = Payment::query()->create([
+                ...$validated,
+                'currency' => strtoupper($validated['currency']),
+                'provider' => $validated['provider'] ?? 'mock',
+                'provider_reference' => 'mock_' . Str::uuid(),
+                'idempotency_key' => $idempotencyKey,
+                'status' => Payment::STATUS_PENDING,
+            ]);
+        } catch (QueryException $exception) {
+            if ($idempotencyKey !== null) {
+                $existingPayment = Payment::query()
+                    ->where('user_id', $validated['user_id'])
+                    ->where('idempotency_key', $idempotencyKey)
+                    ->first();
+
+                if ($existingPayment !== null) {
+                    return response()->json([
+                        'data' => $existingPayment,
+                        'meta' => [
+                            'idempotent_replay' => true,
+                        ],
+                    ]);
+                }
+            }
+
+            throw $exception;
+        }
 
         return response()->json([
             'data' => $payment,
+            'meta' => [
+                'idempotent_replay' => false,
+            ],
         ], 201);
     }
 
@@ -118,6 +161,13 @@ class PaymentController extends Controller
                 'status' => 'Only pending payments can be changed by this operation.',
             ]);
         }
+    }
+
+    private function normalizeIdempotencyKey(?string $idempotencyKey): ?string
+    {
+        $idempotencyKey = trim((string) $idempotencyKey);
+
+        return $idempotencyKey === '' ? null : $idempotencyKey;
     }
 
     /**

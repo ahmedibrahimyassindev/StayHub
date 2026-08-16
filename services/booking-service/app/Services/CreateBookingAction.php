@@ -116,17 +116,26 @@ class CreateBookingAction
         ], $idempotencyKey === null ? null : "booking:{$booking->id}:payment");
 
         if ($payment instanceof JsonResponse) {
-            $this->inventory->post('/api/inventory/releases', $inventoryPayload);
-            DB::transaction(function () use ($booking) {
+            $release = $this->inventory->post('/api/inventory/releases', $inventoryPayload);
+
+            DB::transaction(function () use ($booking, $release) {
+                $compensationFailed = $release instanceof JsonResponse;
+
                 $booking->update([
                     'status' => Booking::STATUS_PAYMENT_FAILED,
-                    'saga_state' => Booking::SAGA_COMPENSATED,
-                    'compensated_at' => now(),
+                    'saga_state' => $compensationFailed ? Booking::SAGA_COMPENSATION_FAILED : Booking::SAGA_COMPENSATED,
+                    'saga_error' => $compensationFailed ? 'Inventory release compensation failed after payment creation failure.' : null,
+                    'compensated_at' => $compensationFailed ? null : now(),
                 ]);
 
-                $this->outbox->recordBookingEvent($booking->refresh(), 'booking.payment_failed', [
-                    'compensation' => 'inventory_released',
-                ]);
+                $booking = $booking->refresh();
+                $this->outbox->recordBookingEvent(
+                    $booking,
+                    $compensationFailed ? 'booking.compensation_failed' : 'booking.payment_failed',
+                    [
+                        'compensation' => $compensationFailed ? 'inventory_release_failed' : 'inventory_released',
+                    ],
+                );
             });
 
             return $payment;

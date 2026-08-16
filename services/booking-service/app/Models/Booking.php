@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Model;
     'idempotency_key',
     'saga_id',
     'saga_state',
+    'saga_error',
     'compensated_at',
     'cancelled_at',
 ])]
@@ -37,6 +38,7 @@ class Booking extends Model
     public const SAGA_AWAITING_PAYMENT = 'awaiting_payment';
     public const SAGA_COMPLETED = 'completed';
     public const SAGA_COMPENSATED = 'compensated';
+    public const SAGA_COMPENSATION_FAILED = 'compensation_failed';
 
     protected function casts(): array
     {

@@ -243,6 +243,17 @@ class BookingController extends Controller
         $release = $this->releaseBookingInventory($booking);
 
         if ($release instanceof JsonResponse) {
+            DB::transaction(function () use ($booking) {
+                $booking->update([
+                    'saga_state' => Booking::SAGA_COMPENSATION_FAILED,
+                    'saga_error' => 'Inventory release compensation failed after payment failure.',
+                ]);
+
+                $this->outbox->recordBookingEvent($booking->refresh(), 'booking.compensation_failed', [
+                    'compensation' => 'inventory_release_failed',
+                ]);
+            });
+
             return $release;
         }
 
@@ -250,6 +261,7 @@ class BookingController extends Controller
             $booking->update([
                 'status' => Booking::STATUS_PAYMENT_FAILED,
                 'saga_state' => Booking::SAGA_COMPENSATED,
+                'saga_error' => null,
                 'compensated_at' => now(),
             ]);
 

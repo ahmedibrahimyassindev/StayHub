@@ -181,6 +181,92 @@ class BookingWorkflowApiTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    public function test_payment_failure_tracks_failed_inventory_release_compensation(): void
+    {
+        config([
+            'services.inventory.url' => 'http://inventory-service:8000',
+            'services.payment.url' => 'http://payment-service:8000',
+        ]);
+
+        $booking = Booking::query()->create([
+            'user_id' => 1,
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-02',
+            'quantity' => 1,
+            'status' => Booking::STATUS_PENDING_PAYMENT,
+            'total_amount' => 180.00,
+            'currency' => 'USD',
+            'payment_id' => 99,
+            'saga_state' => Booking::SAGA_AWAITING_PAYMENT,
+        ]);
+
+        Http::fake([
+            'payment-service:8000/api/payments/99/fail' => Http::response([
+                'data' => ['id' => 99, 'status' => 'failed'],
+            ]),
+            'inventory-service:8000/api/inventory/releases' => Http::response([
+                'message' => 'Inventory service rejected the request.',
+            ], 502),
+        ]);
+
+        $this->postJson("/api/bookings/{$booking->id}/fail-payment", [
+            'failure_reason' => 'Card declined',
+        ], [
+            'X-StayHub-User-Id' => '1',
+        ])->assertStatus(502);
+
+        $this->assertDatabaseHas('bookings', [
+            'id' => $booking->id,
+            'status' => Booking::STATUS_PENDING_PAYMENT,
+            'saga_state' => Booking::SAGA_COMPENSATION_FAILED,
+        ]);
+        $this->assertDatabaseHas('outbox_messages', [
+            'type' => 'booking.compensation_failed',
+        ]);
+    }
+
+    public function test_failed_compensation_can_be_retried(): void
+    {
+        config([
+            'services.inventory.url' => 'http://inventory-service:8000',
+        ]);
+
+        $booking = Booking::query()->create([
+            'user_id' => 1,
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-02',
+            'quantity' => 1,
+            'status' => Booking::STATUS_PAYMENT_FAILED,
+            'total_amount' => 180.00,
+            'currency' => 'USD',
+            'payment_id' => 99,
+            'saga_state' => Booking::SAGA_COMPENSATION_FAILED,
+            'saga_error' => 'Inventory release compensation failed after payment failure.',
+        ]);
+
+        Http::fake([
+            'inventory-service:8000/api/inventory/releases' => Http::response([
+                'data' => ['nights_released' => 1],
+            ]),
+        ]);
+
+        $this->artisan('saga:retry-compensations', ['--limit' => 10])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('bookings', [
+            'id' => $booking->id,
+            'saga_state' => Booking::SAGA_COMPENSATED,
+            'saga_error' => null,
+        ]);
+        $this->assertDatabaseHas('outbox_messages', [
+            'type' => 'booking.compensation_recovered',
+        ]);
+    }
+
     public function test_booking_creation_requires_authenticated_identity(): void
     {
         $this->postJson('/api/bookings', [

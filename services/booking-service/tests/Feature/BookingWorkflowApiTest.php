@@ -133,6 +133,78 @@ class BookingWorkflowApiTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    public function test_inventory_unavailable_does_not_create_booking_or_payment(): void
+    {
+        config([
+            'services.inventory.url' => 'http://inventory-service:8000',
+            'services.payment.url' => 'http://payment-service:8000',
+        ]);
+
+        Http::fake([
+            'inventory-service:8000/api/inventory/reservations' => Http::response([
+                'message' => 'Room inventory is not available for the requested stay.',
+                'failed_date' => '2026-09-01',
+            ], 409),
+        ]);
+
+        $this->postJson('/api/bookings', [
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-02',
+            'quantity' => 1,
+        ], [
+            'X-StayHub-User-Id' => '1',
+        ])->assertConflict();
+
+        $this->assertDatabaseCount('bookings', 0);
+        $this->assertDatabaseCount('outbox_messages', 0);
+        Http::assertSentCount(1);
+    }
+
+    public function test_payment_service_failure_releases_inventory_and_marks_booking_failed(): void
+    {
+        config([
+            'services.inventory.url' => 'http://inventory-service:8000',
+            'services.payment.url' => 'http://payment-service:8000',
+        ]);
+
+        Http::fake([
+            'inventory-service:8000/api/inventory/reservations' => Http::response([
+                'data' => [
+                    'nights_reserved' => 1,
+                    'total_amount' => '180.00',
+                    'currency' => 'USD',
+                ],
+            ]),
+            'payment-service:8000/api/payments' => Http::response([
+                'message' => 'Payment service rejected the request.',
+            ], 502),
+            'inventory-service:8000/api/inventory/releases' => Http::response([
+                'data' => ['nights_released' => 1],
+            ]),
+        ]);
+
+        $this->postJson('/api/bookings', [
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-02',
+            'quantity' => 1,
+        ], [
+            'X-StayHub-User-Id' => '1',
+        ])->assertStatus(502);
+
+        $this->assertDatabaseHas('bookings', [
+            'status' => Booking::STATUS_PAYMENT_FAILED,
+            'saga_state' => Booking::SAGA_COMPENSATED,
+        ]);
+        $this->assertDatabaseHas('outbox_messages', [
+            'type' => 'booking.payment_failed',
+        ]);
+        Http::assertSentCount(3);
+    }
+
     public function test_payment_failure_releases_inventory_and_marks_booking_failed(): void
     {
         config([

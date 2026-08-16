@@ -12,6 +12,8 @@ class BookingWorkflowApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const CORRELATION_ID = '8da4c069-f0f4-4c95-b8d2-46043f23c8d1';
+
     public function test_booking_creation_reserves_inventory_creates_payment_and_notification(): void
     {
         config([
@@ -41,7 +43,9 @@ class BookingWorkflowApiTest extends TestCase
             'quantity' => 1,
         ], [
             'X-StayHub-User-Id' => '1',
+            'X-Correlation-ID' => self::CORRELATION_ID,
         ])->assertCreated()
+            ->assertHeader('X-Correlation-ID', self::CORRELATION_ID)
             ->assertJsonPath('data.booking.status', Booking::STATUS_PENDING_PAYMENT)
             ->assertJsonPath('data.booking.payment_id', 99)
             ->assertJsonPath('data.booking.total_amount', '360.00')
@@ -63,6 +67,7 @@ class BookingWorkflowApiTest extends TestCase
             'topic' => 'booking-events',
             'type' => 'booking.created',
             'status' => OutboxMessage::STATUS_PENDING,
+            'correlation_id' => self::CORRELATION_ID,
         ]);
         $this->assertDatabaseHas('outbox_messages', [
             'topic' => 'notification-events',
@@ -72,6 +77,7 @@ class BookingWorkflowApiTest extends TestCase
 
         Http::assertSentCount(2);
         Http::assertSent(fn ($request) => $request->url() === 'http://payment-service:8000/api/payments'
+            && $request->header('X-Correlation-ID')[0] === self::CORRELATION_ID
             && $request['user_id'] === 1
             && $request['amount'] === '360.00'
             && $request['currency'] === 'USD');

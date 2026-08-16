@@ -14,7 +14,9 @@ class PaymentClient
     public function post(string $path, array $payload, ?string $idempotencyKey = null): JsonResponse|array
     {
         try {
-            $request = Http::acceptJson()->timeout(5);
+            $request = Http::acceptJson()
+                ->withHeaders($this->headers())
+                ->timeout(5);
 
             if ($idempotencyKey !== null) {
                 $request = $request->withHeaders([
@@ -38,5 +40,15 @@ class PaymentClient
         }
 
         return $response->json() ?? [];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function headers(): array
+    {
+        return [
+            'X-Correlation-ID' => app()->bound('correlation_id') ? app('correlation_id') : '',
+        ];
     }
 }

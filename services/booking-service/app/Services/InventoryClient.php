@@ -15,6 +15,7 @@ class InventoryClient
     {
         try {
             $response = Http::acceptJson()
+                ->withHeaders($this->headers())
                 ->timeout(5)
                 ->post(rtrim(config('services.inventory.url'), '/') . $path, $payload);
         } catch (ConnectionException) {
@@ -39,5 +40,15 @@ class InventoryClient
         }
 
         return $response->json() ?? [];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function headers(): array
+    {
+        return [
+            'X-Correlation-ID' => app()->bound('correlation_id') ? app('correlation_id') : '',
+        ];
     }
 }

@@ -18,7 +18,7 @@ class OutboxRecorder
             type: $type,
             aggregateType: 'booking',
             aggregateId: (string) $booking->id,
-            correlationId: $booking->saga_id ?? (string) Str::uuid(),
+            correlationId: $this->correlationId($booking),
             payload: [
                 'booking_id' => $booking->id,
                 'user_id' => $booking->user_id,
@@ -38,7 +38,7 @@ class OutboxRecorder
             type: 'notification.requested',
             aggregateType: 'booking',
             aggregateId: (string) $booking->id,
-            correlationId: $booking->saga_id ?? (string) Str::uuid(),
+            correlationId: $this->correlationId($booking),
             payload: [
                 'recipient_user_id' => $booking->user_id,
                 'channel' => 'email',
@@ -91,5 +91,14 @@ class OutboxRecorder
                 'correlation_id' => $correlationId,
             ],
         ]);
+    }
+
+    private function correlationId(Booking $booking): string
+    {
+        if (app()->bound('correlation_id')) {
+            return app('correlation_id');
+        }
+
+        return $booking->saga_id ?? (string) Str::uuid();
     }
 }

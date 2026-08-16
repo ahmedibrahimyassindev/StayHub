@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Model;
     'status',
     'total_amount',
     'currency',
+    'payment_id',
     'cancelled_at',
 ])]
 class Booking extends Model
@@ -24,8 +25,10 @@ class Booking extends Model
     /** @use HasFactory<BookingFactory> */
     use HasFactory;
 
+    public const STATUS_PENDING_PAYMENT = 'pending_payment';
     public const STATUS_CONFIRMED = 'confirmed';
     public const STATUS_CANCELLED = 'cancelled';
+    public const STATUS_PAYMENT_FAILED = 'payment_failed';
 
     protected function casts(): array
     {

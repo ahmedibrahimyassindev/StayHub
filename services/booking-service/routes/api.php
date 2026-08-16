@@ -14,3 +14,5 @@ Route::get('/bookings', [BookingController::class, 'index']);
 Route::post('/bookings', [BookingController::class, 'store']);
 Route::get('/bookings/{booking}', [BookingController::class, 'show']);
 Route::post('/bookings/{booking}/cancel', [BookingController::class, 'cancel']);
+Route::post('/bookings/{booking}/confirm-payment', [BookingController::class, 'confirmPayment']);
+Route::post('/bookings/{booking}/fail-payment', [BookingController::class, 'failPayment']);

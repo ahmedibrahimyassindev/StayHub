@@ -18,7 +18,7 @@ class BookingController extends Controller
             'user_id' => ['sometimes', 'integer', 'min:1'],
             'hotel_id' => ['sometimes', 'integer', 'min:1'],
             'room_id' => ['sometimes', 'integer', 'min:1'],
-            'status' => ['sometimes', Rule::in([Booking::STATUS_CONFIRMED, Booking::STATUS_CANCELLED])],
+            'status' => ['sometimes', Rule::in($this->statuses())],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ]);
 
@@ -58,7 +58,7 @@ class BookingController extends Controller
             $booking = Booking::query()->create([
                 ...$validated,
                 'quantity' => $quantity,
-                'status' => Booking::STATUS_CONFIRMED,
+                'status' => Booking::STATUS_PENDING_PAYMENT,
                 'currency' => strtoupper($validated['currency']),
             ]);
         } catch (Throwable $exception) {
@@ -67,8 +67,30 @@ class BookingController extends Controller
             throw $exception;
         }
 
+        $payment = $this->postPayment('/api/payments', [
+            'booking_id' => $booking->id,
+            'user_id' => $booking->user_id,
+            'amount' => $booking->total_amount,
+            'currency' => $booking->currency,
+            'provider' => 'mock',
+        ]);
+
+        if ($payment instanceof JsonResponse) {
+            $this->postInventory('/api/inventory/releases', $inventoryPayload);
+            $booking->update(['status' => Booking::STATUS_PAYMENT_FAILED]);
+
+            return $payment;
+        }
+
+        $booking->update([
+            'payment_id' => $payment['data']['id'] ?? null,
+        ]);
+
         return response()->json([
-            'data' => $booking,
+            'data' => [
+                'booking' => $booking->refresh(),
+                'payment' => $payment['data'] ?? $payment,
+            ],
         ], 201);
     }
 
@@ -105,6 +127,94 @@ class BookingController extends Controller
 
         return response()->json([
             'data' => $booking->refresh(),
+        ]);
+    }
+
+    public function confirmPayment(Booking $booking): JsonResponse
+    {
+        if ($booking->status === Booking::STATUS_CONFIRMED) {
+            return response()->json([
+                'data' => $booking,
+            ]);
+        }
+
+        if ($booking->status !== Booking::STATUS_PENDING_PAYMENT) {
+            return response()->json([
+                'message' => 'Only pending payment bookings can be confirmed.',
+            ], 422);
+        }
+
+        if ($booking->payment_id === null) {
+            return response()->json([
+                'message' => 'Booking does not have a payment to confirm.',
+            ], 422);
+        }
+
+        $payment = $this->postPayment("/api/payments/{$booking->payment_id}/succeed", []);
+
+        if ($payment instanceof JsonResponse) {
+            return $payment;
+        }
+
+        $booking->update([
+            'status' => Booking::STATUS_CONFIRMED,
+        ]);
+
+        return response()->json([
+            'data' => [
+                'booking' => $booking->refresh(),
+                'payment' => $payment['data'] ?? $payment,
+            ],
+        ]);
+    }
+
+    public function failPayment(Request $request, Booking $booking): JsonResponse
+    {
+        if ($booking->status === Booking::STATUS_PAYMENT_FAILED) {
+            return response()->json([
+                'data' => $booking,
+            ]);
+        }
+
+        if ($booking->status !== Booking::STATUS_PENDING_PAYMENT) {
+            return response()->json([
+                'message' => 'Only pending payment bookings can be failed.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'failure_reason' => ['sometimes', 'string', 'max:255'],
+        ]);
+
+        if ($booking->payment_id === null) {
+            return response()->json([
+                'message' => 'Booking does not have a payment to fail.',
+            ], 422);
+        }
+
+        $payment = $this->postPayment("/api/payments/{$booking->payment_id}/fail", [
+            'failure_reason' => $validated['failure_reason'] ?? 'Payment failed.',
+        ]);
+
+        if ($payment instanceof JsonResponse) {
+            return $payment;
+        }
+
+        $release = $this->releaseBookingInventory($booking);
+
+        if ($release instanceof JsonResponse) {
+            return $release;
+        }
+
+        $booking->update([
+            'status' => Booking::STATUS_PAYMENT_FAILED,
+        ]);
+
+        return response()->json([
+            'data' => [
+                'booking' => $booking->refresh(),
+                'payment' => $payment['data'] ?? $payment,
+            ],
         ]);
     }
 
@@ -153,5 +263,54 @@ class BookingController extends Controller
         }
 
         return $response->json() ?? [];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function postPayment(string $path, array $payload): JsonResponse|array
+    {
+        try {
+            $response = Http::acceptJson()
+                ->timeout(5)
+                ->post(rtrim(config('services.payment.url'), '/') . $path, $payload);
+        } catch (ConnectionException) {
+            return response()->json([
+                'message' => 'Payment service is unavailable.',
+            ], 503);
+        }
+
+        if ($response->failed()) {
+            return response()->json([
+                'message' => 'Payment service rejected the request.',
+                'payment_status' => $response->status(),
+                'payment' => $response->json(),
+            ], 502);
+        }
+
+        return $response->json() ?? [];
+    }
+
+    private function releaseBookingInventory(Booking $booking): JsonResponse|array
+    {
+        return $this->postInventory('/api/inventory/releases', [
+            'room_id' => $booking->room_id,
+            'check_in' => $booking->check_in->toDateString(),
+            'check_out' => $booking->check_out->toDateString(),
+            'quantity' => $booking->quantity,
+        ]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function statuses(): array
+    {
+        return [
+            Booking::STATUS_PENDING_PAYMENT,
+            Booking::STATUS_CONFIRMED,
+            Booking::STATUS_CANCELLED,
+            Booking::STATUS_PAYMENT_FAILED,
+        ];
     }
 }

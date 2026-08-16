@@ -39,4 +39,8 @@ return [
         'url' => env('INVENTORY_SERVICE_URL', 'http://inventory-service:8000'),
     ],
 
+    'payment' => [
+        'url' => env('PAYMENT_SERVICE_URL', 'http://payment-service:8000'),
+    ],
+
 ];

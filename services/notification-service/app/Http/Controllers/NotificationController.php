@@ -38,7 +38,7 @@ class NotificationController extends Controller
         $notification = NotificationMessage::query()->create($this->validateNotification($request));
 
         return response()->json([
-            'data' => $notification,
+            'data' => $notification->refresh(),
         ], 201);
     }
 

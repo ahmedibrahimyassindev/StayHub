@@ -40,6 +40,12 @@ Run the full gateway smoke test:
 powershell -ExecutionPolicy Bypass -File .\gateway\apisix\e2e-smoke.ps1
 ```
 
+Run a service PHPUnit suite:
+
+```powershell
+docker exec stayhub-booking-service php artisan test
+```
+
 ## CI/CD
 
 GitHub Actions workflows live in `.github/workflows`.

@@ -1,13 +1,18 @@
 $ErrorActionPreference = 'Stop'
 
+. "$PSScriptRoot\stayhub-env.ps1"
+
+$clientId = Get-StayHubEnvValue -Name 'KEYCLOAK_CLIENT_ID' -Default 'stayhub-api'
+$clientSecret = Get-StayHubEnvValue -Name 'KEYCLOAK_CLIENT_SECRET' -Required
+
 $tokenResponse = Invoke-RestMethod `
     -Method Post `
     -Uri 'http://localhost:8080/realms/stayhub/protocol/openid-connect/token' `
     -ContentType 'application/x-www-form-urlencoded' `
     -Body @{
         grant_type = 'password'
-        client_id = 'stayhub-api'
-        client_secret = 'B6Xz1F7xWF5cn2tbFqBdHlJKE9WzZJn4'
+        client_id = $clientId
+        client_secret = $clientSecret
         username = 'customer'
         password = 'password'
         scope = 'openid'
@@ -15,11 +20,38 @@ $tokenResponse = Invoke-RestMethod `
 
 $accessToken = $tokenResponse.access_token
 
-Write-Output 'Unauthenticated protected request:'
-curl.exe -s -o NUL -w "HTTP %{http_code}`n" http://localhost:9080/api/bookings/example
+function Assert-Status {
+    param(
+        [string] $Label,
+        [string] $Url,
+        [int] $Expected,
+        [hashtable] $Headers = @{}
+    )
 
-Write-Output 'Authenticated protected request:'
-curl.exe -s -H "Authorization: Bearer $accessToken" -o NUL -w "HTTP %{http_code}`n" http://localhost:9080/api/bookings/example
+    $curlHeaders = @()
 
-Write-Output 'Authenticated token can reach service; 404 is expected until real booking endpoints are implemented.'
+    foreach ($header in $Headers.GetEnumerator()) {
+        $curlHeaders += @('-H', "$($header.Key): $($header.Value)")
+    }
 
+    $status = curl.exe -s -o NUL -w "%{http_code}" @curlHeaders $Url
+
+    if ([int] $status -ne $Expected) {
+        throw "$Label expected HTTP $Expected, got $status"
+    }
+
+    Write-Output "$Label`: HTTP $status"
+}
+
+Assert-Status `
+    -Label 'Unauthenticated protected request' `
+    -Url 'http://localhost:9080/api/bookings' `
+    -Expected 401
+
+Assert-Status `
+    -Label 'Authenticated protected request' `
+    -Url 'http://localhost:9080/api/bookings' `
+    -Expected 200 `
+    -Headers @{ Authorization = "Bearer $accessToken" }
+
+Write-Output 'APISIX + Keycloak authentication test passed.'

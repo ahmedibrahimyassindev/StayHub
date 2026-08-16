@@ -11,7 +11,7 @@ deployment:
       - 0.0.0.0/0
     admin_key:
       - name: admin
-        key: stayhub-admin-key
+        key: ${{APISIX_ADMIN_KEY}}
         role: admin
   etcd:
     host:
@@ -22,4 +22,3 @@ plugin_attr:
     export_addr:
       ip: 0.0.0.0
       port: 9091
-

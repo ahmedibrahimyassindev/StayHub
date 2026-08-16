@@ -1,9 +1,11 @@
 $ErrorActionPreference = 'Stop'
 
+. "$PSScriptRoot\stayhub-env.ps1"
+
 $adminUrl = 'http://localhost:9180/apisix/admin'
-$apiKey = 'stayhub-admin-key'
-$keycloakClientId = 'stayhub-api'
-$keycloakClientSecret = 'B6Xz1F7xWF5cn2tbFqBdHlJKE9WzZJn4'
+$apiKey = Get-StayHubEnvValue -Name 'APISIX_ADMIN_KEY' -Required
+$keycloakClientId = Get-StayHubEnvValue -Name 'KEYCLOAK_CLIENT_ID' -Default 'stayhub-api'
+$keycloakClientSecret = Get-StayHubEnvValue -Name 'KEYCLOAK_CLIENT_SECRET' -Required
 $keycloakDiscoveryUrl = 'http://keycloak:8080/realms/stayhub/.well-known/openid-configuration'
 $keycloakIntrospectionUrl = 'http://keycloak:8080/realms/stayhub/protocol/openid-connect/token/introspect'
 

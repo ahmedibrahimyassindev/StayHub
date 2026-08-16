@@ -28,6 +28,8 @@ Start the stack:
 docker compose up -d
 ```
 
+Create a local `.env` from `.env.example` before starting the stack, and set at least `APISIX_ADMIN_KEY` and `KEYCLOAK_CLIENT_SECRET`.
+
 Register APISIX routes:
 
 ```powershell

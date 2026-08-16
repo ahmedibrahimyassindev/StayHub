@@ -6,6 +6,8 @@ Start the foundation stack:
 docker compose up -d
 ```
 
+Before starting locally, copy `.env.example` to `.env` and set `APISIX_ADMIN_KEY` plus `KEYCLOAK_CLIENT_SECRET`. APISIX and the gateway scripts read these values from the environment or root `.env` file.
+
 Local endpoints:
 
 - APISIX gateway: `http://localhost:9080`

@@ -36,6 +36,8 @@ services:
       - etcd
     volumes:
       - ./gateway/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+    environment:
+      APISIX_ADMIN_KEY: ${APISIX_ADMIN_KEY:?Set APISIX_ADMIN_KEY in .env}
     ports:
       - "9080:9080"
       - "9443:9443"

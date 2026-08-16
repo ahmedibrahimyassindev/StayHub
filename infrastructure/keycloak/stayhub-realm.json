@@ -24,7 +24,7 @@
       "name": "StayHub API",
       "enabled": true,
       "protocol": "openid-connect",
-      "secret": "B6Xz1F7xWF5cn2tbFqBdHlJKE9WzZJn4",
+      "secret": "change-me",
       "publicClient": false,
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": true,

@@ -1,9 +1,11 @@
 $ErrorActionPreference = 'Stop'
 
+. "$PSScriptRoot\stayhub-env.ps1"
+
 $gatewayUrl = 'http://localhost:9080'
 $keycloakUrl = 'http://localhost:8080/realms/stayhub/protocol/openid-connect/token'
-$clientId = 'stayhub-api'
-$clientSecret = 'B6Xz1F7xWF5cn2tbFqBdHlJKE9WzZJn4'
+$clientId = Get-StayHubEnvValue -Name 'KEYCLOAK_CLIENT_ID' -Default 'stayhub-api'
+$clientSecret = Get-StayHubEnvValue -Name 'KEYCLOAK_CLIENT_SECRET' -Required
 
 function Get-Token {
     param([string] $Username)

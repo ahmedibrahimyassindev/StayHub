@@ -47,8 +47,18 @@ class PaymentClient
      */
     private function headers(): array
     {
-        return [
+        $headers = [
             'X-Correlation-ID' => app()->bound('correlation_id') ? app('correlation_id') : '',
         ];
+
+        $serviceToken = config('services.internal.token') ?: getenv('INTERNAL_SERVICE_TOKEN') ?: ($_SERVER['INTERNAL_SERVICE_TOKEN'] ?? null);
+
+        if ($serviceToken) {
+            $headers['X-StayHub-Service-Token'] = $serviceToken;
+            $headers['X-Service-Token'] = $serviceToken;
+            $headers['Authorization'] = 'Service ' . $serviceToken;
+        }
+
+        return $headers;
     }
 }

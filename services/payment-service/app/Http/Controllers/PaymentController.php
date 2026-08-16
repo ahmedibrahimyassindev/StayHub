@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Enums\PaymentStatus;
 use App\Models\Payment;
+use App\Security\AuthenticatedIdentity;
+use App\Security\PaymentAccess;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,6 +15,11 @@ use Illuminate\Validation\ValidationException;
 
 class PaymentController extends Controller
 {
+    public function __construct(
+        private readonly PaymentAccess $access,
+    ) {
+    }
+
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -22,9 +29,18 @@ class PaymentController extends Controller
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ]);
 
+        $authorization = $this->access->authorizeIndex($request, isset($validated['user_id']) ? (int) $validated['user_id'] : null);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
+        $identity = $authorization instanceof AuthenticatedIdentity ? $authorization : null;
+
         $payments = Payment::query()
             ->when($validated['booking_id'] ?? null, fn ($query, $bookingId) => $query->where('booking_id', $bookingId))
-            ->when($validated['user_id'] ?? null, fn ($query, $userId) => $query->where('user_id', $userId))
+            ->when($identity !== null && ! $identity->canManagePayments(), fn ($query) => $query->where('user_id', $identity->userId()))
+            ->when(($identity === null || $identity->canManagePayments()) && ($validated['user_id'] ?? null), fn ($query, $userId) => $query->where('user_id', $userId))
             ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->latest()
             ->paginate($validated['per_page'] ?? 15);
@@ -34,6 +50,12 @@ class PaymentController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $authorization = $this->access->requireServiceOrManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $validated = $request->validate([
             'booking_id' => ['required', 'integer', 'min:1'],
             'user_id' => ['required', 'integer', 'min:1'],
@@ -107,15 +129,27 @@ class PaymentController extends Controller
         ], 201);
     }
 
-    public function show(Payment $payment): JsonResponse
+    public function show(Request $request, Payment $payment): JsonResponse
     {
+        $authorization = $this->access->authorizePaymentRead($request, $payment);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         return response()->json([
             'data' => $payment,
         ]);
     }
 
-    public function succeed(Payment $payment): JsonResponse
+    public function succeed(Request $request, Payment $payment): JsonResponse
     {
+        $authorization = $this->access->requireServiceOrManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $this->ensurePending($payment);
 
         $payment->update([
@@ -131,6 +165,12 @@ class PaymentController extends Controller
 
     public function fail(Request $request, Payment $payment): JsonResponse
     {
+        $authorization = $this->access->requireServiceOrManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $this->ensurePending($payment);
 
         $validated = $request->validate([
@@ -147,8 +187,14 @@ class PaymentController extends Controller
         ]);
     }
 
-    public function refund(Payment $payment): JsonResponse
+    public function refund(Request $request, Payment $payment): JsonResponse
     {
+        $authorization = $this->access->requireServiceOrManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         if ($payment->status !== PaymentStatus::Succeeded) {
             throw ValidationException::withMessages([
                 'status' => 'Only succeeded payments can be refunded.',

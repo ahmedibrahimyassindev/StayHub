@@ -54,4 +54,8 @@ return [
         'allow_test_identity_headers' => env('ALLOW_TEST_IDENTITY_HEADERS', false),
     ],
 
+    'internal' => [
+        'token' => env('INTERNAL_SERVICE_TOKEN'),
+    ],
+
 ];

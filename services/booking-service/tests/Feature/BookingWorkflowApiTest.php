@@ -19,6 +19,7 @@ class BookingWorkflowApiTest extends TestCase
         parent::setUp();
 
         config(['services.keycloak.allow_test_identity_headers' => true]);
+        config(['services.internal.token' => 'test-internal-token']);
     }
 
     public function test_booking_creation_reserves_inventory_creates_payment_and_notification(): void
@@ -85,6 +86,9 @@ class BookingWorkflowApiTest extends TestCase
         Http::assertSentCount(2);
         Http::assertSent(fn ($request) => $request->url() === 'http://payment-service:8000/api/payments'
             && $request->header('X-Correlation-ID')[0] === self::CORRELATION_ID
+            && $request->header('X-StayHub-Service-Token')[0] === 'test-internal-token'
+            && $request->header('X-Service-Token')[0] === 'test-internal-token'
+            && $request->header('Authorization')[0] === 'Service test-internal-token'
             && $request['user_id'] === 1
             && $request['amount'] === '360.00'
             && $request['currency'] === 'USD');

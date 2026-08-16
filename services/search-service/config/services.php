@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    'hotel' => [
+        'url' => env('HOTEL_SERVICE_URL', 'http://hotel-service:8000'),
+    ],
+
+    'inventory' => [
+        'url' => env('INVENTORY_SERVICE_URL', 'http://inventory-service:8000'),
+    ],
+
 ];

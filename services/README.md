@@ -54,3 +54,4 @@ Implemented domains:
 - `inventory-service`: room availability table, seed data, list/upsert APIs, and reservation-safe reserve/release APIs.
 - `booking-service`: bookings table, create/list/show/cancel APIs, pending-payment workflow, and inventory/payment coordination.
 - `payment-service`: payments table, seed data, list/create/show APIs, and mock succeed/fail/refund workflow.
+- `search-service`: hotel availability search API that aggregates active hotels/rooms with inventory availability.

@@ -3,12 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Models\UserProfile;
+use App\Security\AuthenticatedIdentity;
+use App\Security\UserAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class UserProfileController extends Controller
 {
+    public function __construct(
+        private readonly UserAccess $access,
+    ) {
+    }
+
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -18,7 +25,14 @@ class UserProfileController extends Controller
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ]);
 
+        $identity = $this->access->resolve($request);
+
+        if ($identity instanceof JsonResponse) {
+            return $identity;
+        }
+
         $profiles = UserProfile::query()
+            ->when(! $identity->canManageUsers(), fn ($query) => $query->where('keycloak_user_id', $identity->username()))
             ->when($validated['role'] ?? null, fn ($query, $role) => $query->where('role', $role))
             ->when($validated['email'] ?? null, fn ($query, $email) => $query->where('email', 'ilike', "%{$email}%"))
             ->when($validated['q'] ?? null, function ($query, $search) {
@@ -38,6 +52,16 @@ class UserProfileController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $this->validateProfile($request);
+        $authorization = $this->access->authorizeProfileWrite($request, $validated);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
+        if ($authorization instanceof AuthenticatedIdentity && ! $authorization->canManageUsers()) {
+            $validated['keycloak_user_id'] = $authorization->username();
+            $validated['role'] = 'CUSTOMER';
+        }
 
         $profile = UserProfile::query()->create($validated);
 
@@ -46,15 +70,27 @@ class UserProfileController extends Controller
         ], 201);
     }
 
-    public function show(UserProfile $profile): JsonResponse
+    public function show(Request $request, UserProfile $profile): JsonResponse
     {
+        $authorization = $this->access->authorizeProfileRead($request, $profile);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         return response()->json([
             'data' => $profile,
         ]);
     }
 
-    public function showByKeycloakId(string $keycloakUserId): JsonResponse
+    public function showByKeycloakId(Request $request, string $keycloakUserId): JsonResponse
     {
+        $authorization = $this->access->authorizeKeycloakProfileRead($request, $keycloakUserId);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $profile = UserProfile::query()
             ->where('keycloak_user_id', $keycloakUserId)
             ->firstOrFail();
@@ -66,7 +102,18 @@ class UserProfileController extends Controller
 
     public function update(Request $request, UserProfile $profile): JsonResponse
     {
-        $profile->update($this->validateProfile($request, $profile));
+        $validated = $this->validateProfile($request, $profile);
+        $authorization = $this->access->authorizeProfileWrite($request, $validated, $profile);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
+        if ($authorization instanceof AuthenticatedIdentity && ! $authorization->canManageUsers()) {
+            unset($validated['keycloak_user_id'], $validated['role']);
+        }
+
+        $profile->update($validated);
 
         return response()->json([
             'data' => $profile->refresh(),

@@ -178,6 +178,9 @@ services:
       REDIS_PORT: 6379
       KEYCLOAK_BASE_URL: http://keycloak:8080
       KEYCLOAK_REALM: stayhub
+      KEYCLOAK_ISSUER: http://localhost:8080/realms/stayhub
+      KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/stayhub/protocol/openid-connect/certs
+      KEYCLOAK_AUDIENCE: stayhub-api
       KAFKA_BROKERS: kafka:9092
     ports:
       - "8002:8000"

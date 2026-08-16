@@ -86,10 +86,18 @@ class BookingController extends Controller
             'payment_id' => $payment['data']['id'] ?? null,
         ]);
 
+        $notification = $this->createNotification(
+            $booking->refresh(),
+            'booking.pending_payment',
+            'Your StayHub booking is pending payment',
+            'Complete payment to confirm your booking.',
+        );
+
         return response()->json([
             'data' => [
-                'booking' => $booking->refresh(),
+                'booking' => $booking,
                 'payment' => $payment['data'] ?? $payment,
+                'notification' => $notification,
             ],
         ], 201);
     }
@@ -125,8 +133,18 @@ class BookingController extends Controller
             'cancelled_at' => now(),
         ]);
 
+        $notification = $this->createNotification(
+            $booking->refresh(),
+            'booking.cancelled',
+            'Your StayHub booking was cancelled',
+            'Your reserved room inventory has been released.',
+        );
+
         return response()->json([
-            'data' => $booking->refresh(),
+            'data' => [
+                'booking' => $booking,
+                'notification' => $notification,
+            ],
         ]);
     }
 
@@ -160,10 +178,18 @@ class BookingController extends Controller
             'status' => Booking::STATUS_CONFIRMED,
         ]);
 
+        $notification = $this->createNotification(
+            $booking->refresh(),
+            'booking.confirmed',
+            'Your StayHub booking is confirmed',
+            'Payment succeeded and your booking is confirmed.',
+        );
+
         return response()->json([
             'data' => [
-                'booking' => $booking->refresh(),
+                'booking' => $booking,
                 'payment' => $payment['data'] ?? $payment,
+                'notification' => $notification,
             ],
         ]);
     }
@@ -210,10 +236,18 @@ class BookingController extends Controller
             'status' => Booking::STATUS_PAYMENT_FAILED,
         ]);
 
+        $notification = $this->createNotification(
+            $booking->refresh(),
+            'payment.failed',
+            'Your StayHub payment failed',
+            'Payment failed and your reserved room inventory has been released.',
+        );
+
         return response()->json([
             'data' => [
-                'booking' => $booking->refresh(),
+                'booking' => $booking,
                 'payment' => $payment['data'] ?? $payment,
+                'notification' => $notification,
             ],
         ]);
     }
@@ -299,6 +333,36 @@ class BookingController extends Controller
             'check_out' => $booking->check_out->toDateString(),
             'quantity' => $booking->quantity,
         ]);
+    }
+
+    private function createNotification(Booking $booking, string $type, string $subject, string $body): ?array
+    {
+        try {
+            $response = Http::acceptJson()
+                ->timeout(5)
+                ->post(rtrim(config('services.notification.url'), '/') . '/api/notifications', [
+                    'recipient_user_id' => $booking->user_id,
+                    'channel' => 'email',
+                    'type' => $type,
+                    'subject' => $subject,
+                    'body' => $body,
+                    'payload' => [
+                        'booking_id' => $booking->id,
+                        'hotel_id' => $booking->hotel_id,
+                        'room_id' => $booking->room_id,
+                        'payment_id' => $booking->payment_id,
+                        'status' => $booking->status,
+                    ],
+                ]);
+        } catch (Throwable) {
+            return null;
+        }
+
+        if ($response->failed()) {
+            return null;
+        }
+
+        return $response->json('data');
     }
 
     /**

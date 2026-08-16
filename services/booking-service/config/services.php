@@ -43,4 +43,8 @@ return [
         'url' => env('PAYMENT_SERVICE_URL', 'http://payment-service:8000'),
     ],
 
+    'notification' => [
+        'url' => env('NOTIFICATION_SERVICE_URL', 'http://notification-service:8000'),
+    ],
+
 ];

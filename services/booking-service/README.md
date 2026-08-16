@@ -47,13 +47,13 @@ Create booking:
 }
 ```
 
-Booking creation reserves inventory first by calling `inventory-service`, creates the booking as `pending_payment`, then creates a pending mock payment in `payment-service`. If inventory is unavailable, the API returns `409 Conflict` and no booking row is created.
+Booking creation reserves inventory first by calling `inventory-service`, creates the booking as `pending_payment`, creates a pending mock payment in `payment-service`, then creates a pending-payment notification in `notification-service`. If inventory is unavailable, the API returns `409 Conflict` and no booking row is created.
 
-Payment confirmation marks the mock payment as succeeded, then changes the booking to `confirmed`.
+Payment confirmation marks the mock payment as succeeded, changes the booking to `confirmed`, and creates a confirmation notification.
 
-Payment failure marks the mock payment as failed, releases reserved inventory, then changes the booking to `payment_failed`.
+Payment failure marks the mock payment as failed, releases reserved inventory, changes the booking to `payment_failed`, and creates a failure notification.
 
-Cancellation calls `inventory-service` to release the reserved rooms, then marks the booking as `cancelled`.
+Cancellation calls `inventory-service` to release the reserved rooms, marks the booking as `cancelled`, and creates a cancellation notification.
 
 ## Local Commands
 

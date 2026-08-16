@@ -35,3 +35,11 @@ powershell -ExecutionPolicy Bypass -File .\infrastructure\kafka\publish-booking-
 ```
 
 The script reads pending rows from `stayhub-booking-db`, sends each payload through `kafka-console-producer` in `stayhub-kafka`, then marks the row `published` only after the producer exits successfully.
+
+Consume `notification.requested` events into Notification Service:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\infrastructure\kafka\consume-notification-events.ps1 -MaxMessages 10
+```
+
+The consumer uses group `stayhub-notification-service` and writes `source_event_id` to notification records so duplicate event delivery is safe.

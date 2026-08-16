@@ -35,10 +35,30 @@ class NotificationController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $notification = NotificationMessage::query()->create($this->validateNotification($request));
+        $validated = $this->validateNotification($request);
+
+        if (isset($validated['source_event_id'])) {
+            $existingNotification = NotificationMessage::query()
+                ->where('source_event_id', $validated['source_event_id'])
+                ->first();
+
+            if ($existingNotification !== null) {
+                return response()->json([
+                    'data' => $existingNotification,
+                    'meta' => [
+                        'idempotent_replay' => true,
+                    ],
+                ]);
+            }
+        }
+
+        $notification = NotificationMessage::query()->create($validated);
 
         return response()->json([
             'data' => $notification->refresh(),
+            'meta' => [
+                'idempotent_replay' => false,
+            ],
         ], 201);
     }
 
@@ -107,6 +127,7 @@ class NotificationController extends Controller
     private function validateNotification(Request $request): array
     {
         return $request->validate([
+            'source_event_id' => ['sometimes', 'uuid'],
             'recipient_user_id' => ['required', 'integer', 'min:1'],
             'channel' => ['required', Rule::in($this->channels())],
             'type' => ['required', 'string', 'max:80'],

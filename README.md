@@ -60,6 +60,12 @@ Publish pending booking outbox events to Kafka:
 powershell -ExecutionPolicy Bypass -File .\infrastructure\kafka\publish-booking-outbox.ps1 -Limit 50
 ```
 
+Consume notification events into Notification Service:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\infrastructure\kafka\consume-notification-events.ps1 -MaxMessages 10
+```
+
 ## CI/CD
 
 GitHub Actions workflows live in `.github/workflows`.

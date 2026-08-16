@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    'internal' => [
+        'token' => env('INTERNAL_SERVICE_TOKEN'),
+    ],
+
+    'keycloak' => [
+        'issuer' => env('KEYCLOAK_ISSUER', 'http://localhost:8080/realms/stayhub'),
+        'jwks_url' => env('KEYCLOAK_JWKS_URL', 'http://keycloak:8080/realms/stayhub/protocol/openid-connect/certs'),
+        'audience' => env('KEYCLOAK_AUDIENCE', 'stayhub-api'),
+        'allow_test_identity_headers' => env('ALLOW_TEST_IDENTITY_HEADERS', false),
+    ],
+
 ];

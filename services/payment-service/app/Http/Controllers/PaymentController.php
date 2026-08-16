@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\PaymentStatus;
 use App\Models\Payment;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -17,7 +18,7 @@ class PaymentController extends Controller
         $validated = $request->validate([
             'booking_id' => ['sometimes', 'integer', 'min:1'],
             'user_id' => ['sometimes', 'integer', 'min:1'],
-            'status' => ['sometimes', Rule::in($this->statuses())],
+            'status' => ['sometimes', Rule::in(PaymentStatus::values())],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ]);
 
@@ -66,7 +67,7 @@ class PaymentController extends Controller
                 'provider' => $validated['provider'] ?? 'mock',
                 'provider_reference' => 'mock_' . Str::uuid(),
                 'idempotency_key' => $idempotencyKey,
-                'status' => Payment::STATUS_PENDING,
+                'status' => PaymentStatus::Pending,
             ]);
         } catch (QueryException $exception) {
             if ($idempotencyKey !== null) {
@@ -108,7 +109,7 @@ class PaymentController extends Controller
         $this->ensurePending($payment);
 
         $payment->update([
-            'status' => Payment::STATUS_SUCCEEDED,
+            'status' => PaymentStatus::Succeeded,
             'failure_reason' => null,
             'paid_at' => now(),
         ]);
@@ -127,7 +128,7 @@ class PaymentController extends Controller
         ]);
 
         $payment->update([
-            'status' => Payment::STATUS_FAILED,
+            'status' => PaymentStatus::Failed,
             'failure_reason' => $validated['failure_reason'] ?? 'Payment failed in mock provider.',
         ]);
 
@@ -138,14 +139,14 @@ class PaymentController extends Controller
 
     public function refund(Payment $payment): JsonResponse
     {
-        if ($payment->status !== Payment::STATUS_SUCCEEDED) {
+        if ($payment->status !== PaymentStatus::Succeeded) {
             throw ValidationException::withMessages([
                 'status' => 'Only succeeded payments can be refunded.',
             ]);
         }
 
         $payment->update([
-            'status' => Payment::STATUS_REFUNDED,
+            'status' => PaymentStatus::Refunded,
             'refunded_at' => now(),
         ]);
 
@@ -156,7 +157,7 @@ class PaymentController extends Controller
 
     private function ensurePending(Payment $payment): void
     {
-        if ($payment->status !== Payment::STATUS_PENDING) {
+        if ($payment->status !== PaymentStatus::Pending) {
             throw ValidationException::withMessages([
                 'status' => 'Only pending payments can be changed by this operation.',
             ]);
@@ -176,10 +177,7 @@ class PaymentController extends Controller
     private function statuses(): array
     {
         return [
-            Payment::STATUS_PENDING,
-            Payment::STATUS_SUCCEEDED,
-            Payment::STATUS_FAILED,
-            Payment::STATUS_REFUNDED,
+            ...PaymentStatus::values(),
         ];
     }
 }

@@ -48,7 +48,7 @@ Artisan::command('saga:retry-compensations {--limit=25}', function (App\Services
     $limit = max(1, min((int) $this->option('limit'), 100));
 
     $bookings = App\Models\Booking::query()
-        ->where('saga_state', App\Models\Booking::SAGA_COMPENSATION_FAILED)
+        ->where('saga_state', App\Enums\BookingSagaState::CompensationFailed)
         ->orderBy('id')
         ->limit($limit)
         ->get();
@@ -64,9 +64,7 @@ Artisan::command('saga:retry-compensations {--limit=25}', function (App\Services
         ]);
 
         if ($release instanceof Illuminate\Http\JsonResponse) {
-            $booking->update([
-                'saga_error' => 'Inventory release compensation retry failed.',
-            ]);
+            $booking->markCompensationFailed('Inventory release compensation retry failed.');
 
             $outbox->recordBookingEvent($booking->refresh(), 'booking.compensation_retry_failed', [
                 'compensation' => 'inventory_release_failed',
@@ -76,11 +74,7 @@ Artisan::command('saga:retry-compensations {--limit=25}', function (App\Services
         }
 
         Illuminate\Support\Facades\DB::transaction(function () use ($booking, $outbox) {
-            $booking->update([
-                'saga_state' => App\Models\Booking::SAGA_COMPENSATED,
-                'saga_error' => null,
-                'compensated_at' => now(),
-            ]);
+            $booking->markCompensationRecovered();
 
             $outbox->recordBookingEvent($booking->refresh(), 'booking.compensation_recovered', [
                 'compensation' => 'inventory_released',

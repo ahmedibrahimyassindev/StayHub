@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Enums\BookingSagaState;
+use App\Enums\BookingStatus;
 use App\Models\Booking;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -69,12 +71,12 @@ class CreateBookingAction
                     'check_in' => $bookingData['check_in'],
                     'check_out' => $bookingData['check_out'],
                     'quantity' => $quantity,
-                    'status' => Booking::STATUS_PENDING_PAYMENT,
+                    'status' => BookingStatus::PendingPayment,
                     'total_amount' => $reservation['data']['total_amount'],
                     'currency' => strtoupper($reservation['data']['currency']),
                     'idempotency_key' => $idempotencyKey,
                     'saga_id' => (string) Str::uuid(),
-                    'saga_state' => Booking::SAGA_AWAITING_PAYMENT,
+                    'saga_state' => BookingSagaState::AwaitingPayment,
                 ]);
 
                 $this->outbox->recordBookingEvent($booking, 'booking.created');
@@ -122,8 +124,8 @@ class CreateBookingAction
                 $compensationFailed = $release instanceof JsonResponse;
 
                 $booking->update([
-                    'status' => Booking::STATUS_PAYMENT_FAILED,
-                    'saga_state' => $compensationFailed ? Booking::SAGA_COMPENSATION_FAILED : Booking::SAGA_COMPENSATED,
+                    'status' => BookingStatus::PaymentFailed,
+                    'saga_state' => $compensationFailed ? BookingSagaState::CompensationFailed : BookingSagaState::Compensated,
                     'saga_error' => $compensationFailed ? 'Inventory release compensation failed after payment creation failure.' : null,
                     'compensated_at' => $compensationFailed ? null : now(),
                 ]);

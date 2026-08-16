@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\BookingStatus;
 use App\Models\Booking;
 use App\Services\CreateBookingAction;
 use App\Services\InventoryClient;
@@ -96,7 +97,7 @@ class BookingController extends Controller
             return $authorization;
         }
 
-        if ($booking->status === Booking::STATUS_CANCELLED) {
+        if ($booking->status === BookingStatus::Cancelled) {
             return response()->json([
                 'data' => $booking,
             ]);
@@ -114,12 +115,7 @@ class BookingController extends Controller
         }
 
         $notificationEvent = DB::transaction(function () use ($booking) {
-            $booking->update([
-                'status' => Booking::STATUS_CANCELLED,
-                'saga_state' => Booking::SAGA_COMPENSATED,
-                'compensated_at' => now(),
-                'cancelled_at' => now(),
-            ]);
+            $booking->markCancelled();
 
             $booking = $booking->refresh();
             $this->outbox->recordBookingEvent($booking, 'booking.cancelled', [
@@ -151,13 +147,13 @@ class BookingController extends Controller
             return $authorization;
         }
 
-        if ($booking->status === Booking::STATUS_CONFIRMED) {
+        if ($booking->status === BookingStatus::Confirmed) {
             return response()->json([
                 'data' => $booking,
             ]);
         }
 
-        if ($booking->status !== Booking::STATUS_PENDING_PAYMENT) {
+        if ($booking->status !== BookingStatus::PendingPayment) {
             return response()->json([
                 'message' => 'Only pending payment bookings can be confirmed.',
             ], 422);
@@ -176,10 +172,7 @@ class BookingController extends Controller
         }
 
         $notificationEvent = DB::transaction(function () use ($booking) {
-            $booking->update([
-                'status' => Booking::STATUS_CONFIRMED,
-                'saga_state' => Booking::SAGA_COMPLETED,
-            ]);
+            $booking->markConfirmed();
 
             $booking = $booking->refresh();
             $this->outbox->recordBookingEvent($booking, 'booking.confirmed');
@@ -210,13 +203,13 @@ class BookingController extends Controller
             return $authorization;
         }
 
-        if ($booking->status === Booking::STATUS_PAYMENT_FAILED) {
+        if ($booking->status === BookingStatus::PaymentFailed) {
             return response()->json([
                 'data' => $booking,
             ]);
         }
 
-        if ($booking->status !== Booking::STATUS_PENDING_PAYMENT) {
+        if ($booking->status !== BookingStatus::PendingPayment) {
             return response()->json([
                 'message' => 'Only pending payment bookings can be failed.',
             ], 422);
@@ -244,10 +237,7 @@ class BookingController extends Controller
 
         if ($release instanceof JsonResponse) {
             DB::transaction(function () use ($booking) {
-                $booking->update([
-                    'saga_state' => Booking::SAGA_COMPENSATION_FAILED,
-                    'saga_error' => 'Inventory release compensation failed after payment failure.',
-                ]);
+                $booking->markCompensationFailed('Inventory release compensation failed after payment failure.');
 
                 $this->outbox->recordBookingEvent($booking->refresh(), 'booking.compensation_failed', [
                     'compensation' => 'inventory_release_failed',
@@ -258,12 +248,7 @@ class BookingController extends Controller
         }
 
         $notificationEvent = DB::transaction(function () use ($booking) {
-            $booking->update([
-                'status' => Booking::STATUS_PAYMENT_FAILED,
-                'saga_state' => Booking::SAGA_COMPENSATED,
-                'saga_error' => null,
-                'compensated_at' => now(),
-            ]);
+            $booking->markPaymentFailedCompensated();
 
             $booking = $booking->refresh();
             $this->outbox->recordBookingEvent($booking, 'booking.payment_failed', [
@@ -402,10 +387,7 @@ class BookingController extends Controller
     private function statuses(): array
     {
         return [
-            Booking::STATUS_PENDING_PAYMENT,
-            Booking::STATUS_CONFIRMED,
-            Booking::STATUS_CANCELLED,
-            Booking::STATUS_PAYMENT_FAILED,
+            ...BookingStatus::values(),
         ];
     }
 }

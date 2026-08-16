@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Booking;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Throwable;
 
 class CreateBookingAction
@@ -11,7 +13,7 @@ class CreateBookingAction
     public function __construct(
         private readonly InventoryClient $inventory,
         private readonly PaymentClient $payment,
-        private readonly NotificationClient $notifications,
+        private readonly OutboxRecorder $outbox,
     ) {
     }
 
@@ -59,18 +61,26 @@ class CreateBookingAction
         }
 
         try {
-            $booking = Booking::query()->create([
-                'user_id' => $userId,
-                'hotel_id' => $bookingData['hotel_id'],
-                'room_id' => $bookingData['room_id'],
-                'check_in' => $bookingData['check_in'],
-                'check_out' => $bookingData['check_out'],
-                'quantity' => $quantity,
-                'status' => Booking::STATUS_PENDING_PAYMENT,
-                'total_amount' => $reservation['data']['total_amount'],
-                'currency' => strtoupper($reservation['data']['currency']),
-                'idempotency_key' => $idempotencyKey,
-            ]);
+            $booking = DB::transaction(function () use ($bookingData, $idempotencyKey, $quantity, $reservation, $userId) {
+                $booking = Booking::query()->create([
+                    'user_id' => $userId,
+                    'hotel_id' => $bookingData['hotel_id'],
+                    'room_id' => $bookingData['room_id'],
+                    'check_in' => $bookingData['check_in'],
+                    'check_out' => $bookingData['check_out'],
+                    'quantity' => $quantity,
+                    'status' => Booking::STATUS_PENDING_PAYMENT,
+                    'total_amount' => $reservation['data']['total_amount'],
+                    'currency' => strtoupper($reservation['data']['currency']),
+                    'idempotency_key' => $idempotencyKey,
+                    'saga_id' => (string) Str::uuid(),
+                    'saga_state' => Booking::SAGA_AWAITING_PAYMENT,
+                ]);
+
+                $this->outbox->recordBookingEvent($booking, 'booking.created');
+
+                return $booking;
+            });
         } catch (Throwable $exception) {
             $this->inventory->post('/api/inventory/releases', $inventoryPayload);
 
@@ -107,27 +117,48 @@ class CreateBookingAction
 
         if ($payment instanceof JsonResponse) {
             $this->inventory->post('/api/inventory/releases', $inventoryPayload);
-            $booking->update(['status' => Booking::STATUS_PAYMENT_FAILED]);
+            DB::transaction(function () use ($booking) {
+                $booking->update([
+                    'status' => Booking::STATUS_PAYMENT_FAILED,
+                    'saga_state' => Booking::SAGA_COMPENSATED,
+                    'compensated_at' => now(),
+                ]);
+
+                $this->outbox->recordBookingEvent($booking->refresh(), 'booking.payment_failed', [
+                    'compensation' => 'inventory_released',
+                ]);
+            });
 
             return $payment;
         }
 
-        $booking->update([
-            'payment_id' => $payment['data']['id'] ?? null,
-        ]);
+        $notificationEvent = DB::transaction(function () use ($booking, $payment) {
+            $booking->update([
+                'payment_id' => $payment['data']['id'] ?? null,
+            ]);
 
-        $notification = $this->notifications->create(
-            $booking->refresh(),
-            'booking.pending_payment',
-            'Your StayHub booking is pending payment',
-            'Complete payment to confirm your booking.',
-        );
+            $booking = $booking->refresh();
+            $this->outbox->recordBookingEvent($booking, 'payment.pending');
+
+            return $this->outbox->recordNotificationRequested(
+                $booking,
+                'booking.pending_payment',
+                'Your StayHub booking is pending payment',
+                'Complete payment to confirm your booking.',
+            );
+        });
 
         return response()->json([
             'data' => [
-                'booking' => $booking,
+                'booking' => $booking->refresh(),
                 'payment' => $payment['data'] ?? $payment,
-                'notification' => $notification,
+                'notification' => null,
+                'notification_event' => [
+                    'event_id' => $notificationEvent->event_id,
+                    'topic' => $notificationEvent->topic,
+                    'type' => $notificationEvent->type,
+                    'status' => $notificationEvent->status,
+                ],
             ],
             'meta' => [
                 'idempotent_replay' => false,

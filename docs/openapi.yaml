@@ -338,7 +338,7 @@ paths:
     post:
       tags: [Bookings]
       summary: Create booking
-      description: Derives the user from the authenticated gateway identity, reserves inventory, calculates the total from inventory pricing, creates a pending payment, and creates a notification.
+      description: Derives the user from the authenticated gateway identity, reserves inventory, calculates the total from inventory pricing, creates a pending payment, and records notification work in the transactional outbox.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:

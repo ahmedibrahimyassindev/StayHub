@@ -5,11 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Booking;
 use App\Services\CreateBookingAction;
 use App\Services\InventoryClient;
-use App\Services\NotificationClient;
+use App\Services\OutboxRecorder;
 use App\Services\PaymentClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class BookingController extends Controller
@@ -18,7 +19,7 @@ class BookingController extends Controller
         private readonly CreateBookingAction $createBooking,
         private readonly InventoryClient $inventory,
         private readonly PaymentClient $payment,
-        private readonly NotificationClient $notifications,
+        private readonly OutboxRecorder $outbox,
     ) {
     }
 
@@ -112,22 +113,32 @@ class BookingController extends Controller
             return $release;
         }
 
-        $booking->update([
-            'status' => Booking::STATUS_CANCELLED,
-            'cancelled_at' => now(),
-        ]);
+        $notificationEvent = DB::transaction(function () use ($booking) {
+            $booking->update([
+                'status' => Booking::STATUS_CANCELLED,
+                'saga_state' => Booking::SAGA_COMPENSATED,
+                'compensated_at' => now(),
+                'cancelled_at' => now(),
+            ]);
 
-        $notification = $this->notifications->create(
-            $booking->refresh(),
-            'booking.cancelled',
-            'Your StayHub booking was cancelled',
-            'Your reserved room inventory has been released.',
-        );
+            $booking = $booking->refresh();
+            $this->outbox->recordBookingEvent($booking, 'booking.cancelled', [
+                'compensation' => 'inventory_released',
+            ]);
+
+            return $this->outbox->recordNotificationRequested(
+                $booking,
+                'booking.cancelled',
+                'Your StayHub booking was cancelled',
+                'Your reserved room inventory has been released.',
+            );
+        });
 
         return response()->json([
             'data' => [
-                'booking' => $booking,
-                'notification' => $notification,
+                'booking' => $booking->refresh(),
+                'notification' => null,
+                'notification_event' => $this->notificationEventPayload($notificationEvent),
             ],
         ]);
     }
@@ -164,22 +175,29 @@ class BookingController extends Controller
             return $payment;
         }
 
-        $booking->update([
-            'status' => Booking::STATUS_CONFIRMED,
-        ]);
+        $notificationEvent = DB::transaction(function () use ($booking) {
+            $booking->update([
+                'status' => Booking::STATUS_CONFIRMED,
+                'saga_state' => Booking::SAGA_COMPLETED,
+            ]);
 
-        $notification = $this->notifications->create(
-            $booking->refresh(),
-            'booking.confirmed',
-            'Your StayHub booking is confirmed',
-            'Payment succeeded and your booking is confirmed.',
-        );
+            $booking = $booking->refresh();
+            $this->outbox->recordBookingEvent($booking, 'booking.confirmed');
+
+            return $this->outbox->recordNotificationRequested(
+                $booking,
+                'booking.confirmed',
+                'Your StayHub booking is confirmed',
+                'Payment succeeded and your booking is confirmed.',
+            );
+        });
 
         return response()->json([
             'data' => [
-                'booking' => $booking,
+                'booking' => $booking->refresh(),
                 'payment' => $payment['data'] ?? $payment,
-                'notification' => $notification,
+                'notification' => null,
+                'notification_event' => $this->notificationEventPayload($notificationEvent),
             ],
         ]);
     }
@@ -228,22 +246,32 @@ class BookingController extends Controller
             return $release;
         }
 
-        $booking->update([
-            'status' => Booking::STATUS_PAYMENT_FAILED,
-        ]);
+        $notificationEvent = DB::transaction(function () use ($booking) {
+            $booking->update([
+                'status' => Booking::STATUS_PAYMENT_FAILED,
+                'saga_state' => Booking::SAGA_COMPENSATED,
+                'compensated_at' => now(),
+            ]);
 
-        $notification = $this->notifications->create(
-            $booking->refresh(),
-            'payment.failed',
-            'Your StayHub payment failed',
-            'Payment failed and your reserved room inventory has been released.',
-        );
+            $booking = $booking->refresh();
+            $this->outbox->recordBookingEvent($booking, 'booking.payment_failed', [
+                'compensation' => 'inventory_released',
+            ]);
+
+            return $this->outbox->recordNotificationRequested(
+                $booking,
+                'payment.failed',
+                'Your StayHub payment failed',
+                'Payment failed and your reserved room inventory has been released.',
+            );
+        });
 
         return response()->json([
             'data' => [
-                'booking' => $booking,
+                'booking' => $booking->refresh(),
                 'payment' => $payment['data'] ?? $payment,
-                'notification' => $notification,
+                'notification' => null,
+                'notification_event' => $this->notificationEventPayload($notificationEvent),
             ],
         ]);
     }
@@ -256,6 +284,19 @@ class BookingController extends Controller
             'check_out' => $booking->check_out->toDateString(),
             'quantity' => $booking->quantity,
         ]);
+    }
+
+    /**
+     * @return array{event_id: string, topic: string, type: string, status: string}
+     */
+    private function notificationEventPayload(object $event): array
+    {
+        return [
+            'event_id' => $event->event_id,
+            'topic' => $event->topic,
+            'type' => $event->type,
+            'status' => $event->status,
+        ];
     }
 
     /**

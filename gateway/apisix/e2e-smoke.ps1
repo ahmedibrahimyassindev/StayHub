@@ -118,7 +118,7 @@ Invoke-Json -Method Put -Path '/api/inventory' -Headers $headers -Body @{
     currency = 'USD'
 } | Out-Null
 
-Write-Output 'Creating booking with payment and notification...'
+Write-Output 'Creating booking with payment and notification event...'
 $bookingResponse = Invoke-Json -Method Post -Path '/api/bookings' -Headers $headers -Body @{
     hotel_id = $hotelId
     room_id = $roomId
@@ -135,8 +135,8 @@ if ($null -eq $bookingResponse.data.payment.id) {
     throw 'Expected payment id in booking response.'
 }
 
-if ($null -eq $bookingResponse.data.notification.id) {
-    throw 'Expected notification id in booking response.'
+if ($bookingResponse.data.notification_event.topic -ne 'notification-events') {
+    throw 'Expected notification event metadata in booking response.'
 }
 
 $bookingId = $bookingResponse.data.booking.id

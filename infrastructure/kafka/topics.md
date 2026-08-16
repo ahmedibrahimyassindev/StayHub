@@ -9,3 +9,21 @@ Initial StayHub topics:
 
 Kafka is configured with topic auto-creation enabled for local development.
 
+Booking Service writes Kafka-ready messages to its transactional `outbox_messages` table before publishing. Event envelopes include:
+
+- `event_id`
+- `type`
+- `version`
+- `correlation_id`
+- `aggregate_id`
+- `occurred_at`
+- `payload`
+
+Current booking workflow events:
+
+- `booking.created` on `booking-events`
+- `payment.pending` on `booking-events`
+- `booking.confirmed` on `booking-events`
+- `booking.cancelled` on `booking-events`
+- `booking.payment_failed` on `booking-events`
+- `notification.requested` on `notification-events`

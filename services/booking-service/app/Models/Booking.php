@@ -19,6 +19,9 @@ use Illuminate\Database\Eloquent\Model;
     'currency',
     'payment_id',
     'idempotency_key',
+    'saga_id',
+    'saga_state',
+    'compensated_at',
     'cancelled_at',
 ])]
 class Booking extends Model
@@ -31,6 +34,10 @@ class Booking extends Model
     public const STATUS_CANCELLED = 'cancelled';
     public const STATUS_PAYMENT_FAILED = 'payment_failed';
 
+    public const SAGA_AWAITING_PAYMENT = 'awaiting_payment';
+    public const SAGA_COMPLETED = 'completed';
+    public const SAGA_COMPENSATED = 'compensated';
+
     protected function casts(): array
     {
         return [
@@ -38,6 +45,7 @@ class Booking extends Model
             'check_out' => 'date:Y-m-d',
             'quantity' => 'integer',
             'total_amount' => 'decimal:2',
+            'compensated_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
     }

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
+use App\Models\OutboxMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -30,9 +31,6 @@ class BookingWorkflowApiTest extends TestCase
             'payment-service:8000/api/payments' => Http::response([
                 'data' => ['id' => 99, 'status' => 'pending'],
             ], 201),
-            'notification-service:8000/api/notifications' => Http::response([
-                'data' => ['id' => 100, 'type' => 'booking.pending_payment'],
-            ], 201),
         ]);
 
         $this->postJson('/api/bookings', [
@@ -48,7 +46,9 @@ class BookingWorkflowApiTest extends TestCase
             ->assertJsonPath('data.booking.payment_id', 99)
             ->assertJsonPath('data.booking.total_amount', '360.00')
             ->assertJsonPath('data.booking.currency', 'USD')
-            ->assertJsonPath('data.notification.type', 'booking.pending_payment')
+            ->assertJsonPath('data.notification', null)
+            ->assertJsonPath('data.notification_event.topic', 'notification-events')
+            ->assertJsonPath('data.notification_event.type', 'notification.requested')
             ->assertJsonPath('meta.idempotent_replay', false);
 
         $this->assertDatabaseHas('bookings', [
@@ -57,9 +57,20 @@ class BookingWorkflowApiTest extends TestCase
             'status' => Booking::STATUS_PENDING_PAYMENT,
             'total_amount' => 360.00,
             'currency' => 'USD',
+            'saga_state' => Booking::SAGA_AWAITING_PAYMENT,
+        ]);
+        $this->assertDatabaseHas('outbox_messages', [
+            'topic' => 'booking-events',
+            'type' => 'booking.created',
+            'status' => OutboxMessage::STATUS_PENDING,
+        ]);
+        $this->assertDatabaseHas('outbox_messages', [
+            'topic' => 'notification-events',
+            'type' => 'notification.requested',
+            'status' => OutboxMessage::STATUS_PENDING,
         ]);
 
-        Http::assertSentCount(3);
+        Http::assertSentCount(2);
         Http::assertSent(fn ($request) => $request->url() === 'http://payment-service:8000/api/payments'
             && $request['user_id'] === 1
             && $request['amount'] === '360.00'
@@ -84,9 +95,6 @@ class BookingWorkflowApiTest extends TestCase
             ]),
             'payment-service:8000/api/payments' => Http::response([
                 'data' => ['id' => 99, 'status' => 'pending'],
-            ], 201),
-            'notification-service:8000/api/notifications' => Http::response([
-                'data' => ['id' => 100, 'type' => 'booking.pending_payment'],
             ], 201),
         ]);
 
@@ -115,7 +123,8 @@ class BookingWorkflowApiTest extends TestCase
             ->assertJsonPath('meta.idempotent_replay', true);
 
         $this->assertDatabaseCount('bookings', 1);
-        Http::assertSentCount(3);
+        $this->assertDatabaseCount('outbox_messages', 3);
+        Http::assertSentCount(2);
     }
 
     public function test_payment_failure_releases_inventory_and_marks_booking_failed(): void
@@ -146,9 +155,6 @@ class BookingWorkflowApiTest extends TestCase
             'inventory-service:8000/api/inventory/releases' => Http::response([
                 'data' => ['nights_released' => 1],
             ]),
-            'notification-service:8000/api/notifications' => Http::response([
-                'data' => ['id' => 100, 'type' => 'payment.failed'],
-            ], 201),
         ]);
 
         $this->postJson("/api/bookings/{$booking->id}/fail-payment", [
@@ -158,14 +164,21 @@ class BookingWorkflowApiTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('data.booking.status', Booking::STATUS_PAYMENT_FAILED)
             ->assertJsonPath('data.payment.status', 'failed')
-            ->assertJsonPath('data.notification.type', 'payment.failed');
+            ->assertJsonPath('data.notification', null)
+            ->assertJsonPath('data.notification_event.topic', 'notification-events');
 
         $this->assertDatabaseHas('bookings', [
             'id' => $booking->id,
             'status' => Booking::STATUS_PAYMENT_FAILED,
+            'saga_state' => Booking::SAGA_COMPENSATED,
+        ]);
+        $this->assertDatabaseHas('outbox_messages', [
+            'topic' => 'notification-events',
+            'type' => 'notification.requested',
+            'status' => OutboxMessage::STATUS_PENDING,
         ]);
 
-        Http::assertSentCount(3);
+        Http::assertSentCount(2);
     }
 
     public function test_booking_creation_requires_authenticated_identity(): void
@@ -219,5 +232,39 @@ class BookingWorkflowApiTest extends TestCase
             'X-StayHub-Roles' => 'manager',
         ])->assertOk()
             ->assertJsonPath('data.id', $booking->id);
+    }
+
+    public function test_outbox_publish_command_marks_pending_events_published(): void
+    {
+        OutboxMessage::query()->create([
+            'event_id' => '2f8f5ab5-75cb-4108-9f45-8abff6398c41',
+            'topic' => 'booking-events',
+            'type' => 'booking.created',
+            'aggregate_type' => 'booking',
+            'aggregate_id' => '1',
+            'correlation_id' => 'f8fdbfc4-33f6-4bd6-8d2f-6b2f8eac6722',
+            'payload' => [
+                'event_id' => '2f8f5ab5-75cb-4108-9f45-8abff6398c41',
+                'type' => 'booking.created',
+                'version' => 1,
+                'correlation_id' => 'f8fdbfc4-33f6-4bd6-8d2f-6b2f8eac6722',
+                'aggregate_id' => '1',
+                'occurred_at' => now()->toISOString(),
+                'payload' => ['booking_id' => 1],
+            ],
+            'headers' => [
+                'event_id' => '2f8f5ab5-75cb-4108-9f45-8abff6398c41',
+                'type' => 'booking.created',
+            ],
+        ]);
+
+        $this->artisan('outbox:publish', ['--limit' => 10])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('outbox_messages', [
+            'event_id' => '2f8f5ab5-75cb-4108-9f45-8abff6398c41',
+            'status' => OutboxMessage::STATUS_PUBLISHED,
+            'attempts' => 1,
+        ]);
     }
 }

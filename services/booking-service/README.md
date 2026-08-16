@@ -44,15 +44,21 @@ Create booking:
 }
 ```
 
-Booking creation derives `user_id` from trusted gateway identity, reserves inventory first by calling `inventory-service`, calculates `total_amount` and `currency` from inventory pricing, creates the booking as `pending_payment`, creates a pending mock payment in `payment-service`, then creates a pending-payment notification in `notification-service`. If inventory is unavailable, the API returns `409 Conflict` and no booking row is created.
+Booking creation derives `user_id` from trusted gateway identity, reserves inventory first by calling `inventory-service`, calculates `total_amount` and `currency` from inventory pricing, creates the booking as `pending_payment`, creates a pending mock payment in `payment-service`, and records notification work in the transactional outbox. If inventory is unavailable, the API returns `409 Conflict` and no booking row is created.
 
 Send `Idempotency-Key` on booking creation to make client retries safe. A repeated key for the same authenticated user returns the original booking with `meta.idempotent_replay=true` instead of reserving inventory or creating another payment again.
 
-Payment confirmation marks the mock payment as succeeded, changes the booking to `confirmed`, and creates a confirmation notification.
+Payment confirmation marks the mock payment as succeeded, changes the booking to `confirmed`, marks the booking Saga completed, and records a confirmation notification event.
 
-Payment failure marks the mock payment as failed, releases reserved inventory, changes the booking to `payment_failed`, and creates a failure notification.
+Payment failure marks the mock payment as failed, releases reserved inventory, changes the booking to `payment_failed`, marks the booking Saga compensated, and records a failure notification event.
 
-Cancellation calls `inventory-service` to release the reserved rooms, marks the booking as `cancelled`, and creates a cancellation notification.
+Cancellation calls `inventory-service` to release the reserved rooms, marks the booking as `cancelled`, marks the booking Saga compensated, and records a cancellation notification event.
+
+Transactional outbox events are stored in `outbox_messages` with a versioned envelope containing `event_id`, `correlation_id`, `aggregate_id`, `occurred_at`, and `payload`. Publish pending events with:
+
+```bash
+php artisan outbox:publish --limit=50
+```
 
 ## Local Commands
 

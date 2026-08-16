@@ -83,6 +83,8 @@ class RoomInventoryController extends Controller
         $dates = $this->nightsBetween($validated['check_in'], $validated['check_out']);
 
         try {
+            $pricing = $this->pricingForStay($validated['room_id'], $dates, $quantity);
+
             DB::transaction(function () use ($validated, $quantity, $dates) {
                 foreach ($dates as $date) {
                     $updated = RoomInventory::query()
@@ -114,6 +116,8 @@ class RoomInventoryController extends Controller
                 'check_out' => $validated['check_out'],
                 'quantity' => $quantity,
                 'nights_reserved' => count($dates),
+                'total_amount' => $pricing['total_amount'],
+                'currency' => $pricing['currency'],
             ],
         ]);
     }
@@ -171,6 +175,42 @@ class RoomInventoryController extends Controller
 
         return $dates;
     }
+
+    /**
+     * @param list<string> $dates
+     * @return array{total_amount: string, currency: string}
+     */
+    private function pricingForStay(int $roomId, array $dates, int $quantity): array
+    {
+        $inventoryRows = RoomInventory::query()
+            ->where('room_id', $roomId)
+            ->whereIn('date', $dates)
+            ->get(['date', 'price', 'currency']);
+
+        if ($inventoryRows->count() !== count($dates)) {
+            $coveredDates = $inventoryRows
+                ->map(fn (RoomInventory $inventory) => $inventory->date->toDateString())
+                ->all();
+            $missingDate = collect($dates)->first(fn (string $date) => ! in_array($date, $coveredDates, true));
+
+            throw new InventoryUnavailableException($missingDate ?? $dates[0]);
+        }
+
+        $currency = strtoupper((string) $inventoryRows->first()->currency);
+
+        if ($inventoryRows->contains(fn (RoomInventory $inventory) => strtoupper($inventory->currency) !== $currency)) {
+            throw ValidationException::withMessages([
+                'currency' => 'Inventory currency must be consistent for the full stay.',
+            ]);
+        }
+
+        $totalAmount = $inventoryRows->sum(fn (RoomInventory $inventory) => (float) $inventory->price) * $quantity;
+
+        return [
+            'total_amount' => number_format($totalAmount, 2, '.', ''),
+            'currency' => $currency,
+        ];
+    }
 }
 
 class InventoryUnavailableException extends \RuntimeException
@@ -180,4 +220,3 @@ class InventoryUnavailableException extends \RuntimeException
         parent::__construct("Inventory unavailable for {$date}");
     }
 }
-

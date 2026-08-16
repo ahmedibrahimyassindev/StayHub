@@ -21,7 +21,11 @@ class BookingWorkflowApiTest extends TestCase
 
         Http::fake([
             'inventory-service:8000/api/inventory/reservations' => Http::response([
-                'data' => ['nights_reserved' => 1],
+                'data' => [
+                    'nights_reserved' => 2,
+                    'total_amount' => '360.00',
+                    'currency' => 'USD',
+                ],
             ]),
             'payment-service:8000/api/payments' => Http::response([
                 'data' => ['id' => 99, 'status' => 'pending'],
@@ -32,27 +36,33 @@ class BookingWorkflowApiTest extends TestCase
         ]);
 
         $this->postJson('/api/bookings', [
-            'user_id' => 1,
             'hotel_id' => 1,
             'room_id' => 1,
             'check_in' => '2026-09-01',
-            'check_out' => '2026-09-02',
+            'check_out' => '2026-09-03',
             'quantity' => 1,
-            'total_amount' => 180.00,
-            'currency' => 'usd',
+        ], [
+            'X-StayHub-User-Id' => '1',
         ])->assertCreated()
             ->assertJsonPath('data.booking.status', Booking::STATUS_PENDING_PAYMENT)
             ->assertJsonPath('data.booking.payment_id', 99)
+            ->assertJsonPath('data.booking.total_amount', '360.00')
+            ->assertJsonPath('data.booking.currency', 'USD')
             ->assertJsonPath('data.notification.type', 'booking.pending_payment');
 
         $this->assertDatabaseHas('bookings', [
             'user_id' => 1,
             'payment_id' => 99,
             'status' => Booking::STATUS_PENDING_PAYMENT,
+            'total_amount' => 360.00,
             'currency' => 'USD',
         ]);
 
         Http::assertSentCount(3);
+        Http::assertSent(fn ($request) => $request->url() === 'http://payment-service:8000/api/payments'
+            && $request['user_id'] === 1
+            && $request['amount'] === '360.00'
+            && $request['currency'] === 'USD');
     }
 
     public function test_payment_failure_releases_inventory_and_marks_booking_failed(): void
@@ -90,6 +100,8 @@ class BookingWorkflowApiTest extends TestCase
 
         $this->postJson("/api/bookings/{$booking->id}/fail-payment", [
             'failure_reason' => 'Card declined',
+        ], [
+            'X-StayHub-User-Id' => '1',
         ])->assertOk()
             ->assertJsonPath('data.booking.status', Booking::STATUS_PAYMENT_FAILED)
             ->assertJsonPath('data.payment.status', 'failed')
@@ -101,5 +113,58 @@ class BookingWorkflowApiTest extends TestCase
         ]);
 
         Http::assertSentCount(3);
+    }
+
+    public function test_booking_creation_requires_authenticated_identity(): void
+    {
+        $this->postJson('/api/bookings', [
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-03',
+            'quantity' => 1,
+        ])->assertUnauthorized()
+            ->assertJsonPath('message', 'Authenticated user identity is required.');
+    }
+
+    public function test_customer_cannot_view_another_users_booking(): void
+    {
+        $booking = Booking::query()->create([
+            'user_id' => 1,
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-02',
+            'quantity' => 1,
+            'status' => Booking::STATUS_PENDING_PAYMENT,
+            'total_amount' => 180.00,
+            'currency' => 'USD',
+        ]);
+
+        $this->getJson("/api/bookings/{$booking->id}", [
+            'X-StayHub-User-Id' => '2',
+        ])->assertForbidden()
+            ->assertJsonPath('message', 'You are not allowed to access this booking.');
+    }
+
+    public function test_manager_can_view_any_booking(): void
+    {
+        $booking = Booking::query()->create([
+            'user_id' => 1,
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-02',
+            'quantity' => 1,
+            'status' => Booking::STATUS_PENDING_PAYMENT,
+            'total_amount' => 180.00,
+            'currency' => 'USD',
+        ]);
+
+        $this->getJson("/api/bookings/{$booking->id}", [
+            'X-StayHub-User-Id' => '2',
+            'X-StayHub-Roles' => 'manager',
+        ])->assertOk()
+            ->assertJsonPath('data.id', $booking->id);
     }
 }

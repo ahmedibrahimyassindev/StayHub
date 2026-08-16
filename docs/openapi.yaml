@@ -317,11 +317,8 @@ paths:
     get:
       tags: [Bookings]
       summary: List bookings
+      description: Customers see only their own bookings. Managers and admins can list all bookings.
       parameters:
-        - name: user_id
-          in: query
-          schema:
-            type: integer
         - name: hotel_id
           in: query
           schema:
@@ -341,7 +338,7 @@ paths:
     post:
       tags: [Bookings]
       summary: Create booking
-      description: Reserves inventory, creates a pending payment, and creates a notification.
+      description: Derives the user from the authenticated gateway identity, reserves inventory, calculates the total from inventory pricing, creates a pending payment, and creates a notification.
       requestBody:
         required: true
         content:
@@ -353,6 +350,8 @@ paths:
           description: Booking created
         '409':
           $ref: '#/components/responses/Conflict'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/bookings/{booking}:
     parameters:
       - $ref: '#/components/parameters/BookingId'
@@ -737,6 +736,18 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Authentication is required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated user cannot access the requested resource
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     NotFound:
       description: Resource not found
   schemas:
@@ -870,10 +881,8 @@ components:
           default: 1
     BookingInput:
       type: object
-      required: [user_id, hotel_id, room_id, check_in, check_out, total_amount, currency]
+      required: [hotel_id, room_id, check_in, check_out]
       properties:
-        user_id:
-          type: integer
         hotel_id:
           type: integer
         room_id:
@@ -887,11 +896,6 @@ components:
         quantity:
           type: integer
           default: 1
-        total_amount:
-          type: number
-        currency:
-          type: string
-          example: USD
     PaymentInput:
       type: object
       required: [booking_id, user_id, amount, currency]

@@ -6,6 +6,7 @@ use App\Models\Booking;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
 use Throwable;
@@ -15,15 +16,20 @@ class BookingController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'user_id' => ['sometimes', 'integer', 'min:1'],
             'hotel_id' => ['sometimes', 'integer', 'min:1'],
             'room_id' => ['sometimes', 'integer', 'min:1'],
             'status' => ['sometimes', Rule::in($this->statuses())],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
         ]);
 
+        $identity = $this->identity($request);
+
+        if ($identity instanceof JsonResponse) {
+            return $identity;
+        }
+
         $bookings = Booking::query()
-            ->when($validated['user_id'] ?? null, fn ($query, $userId) => $query->where('user_id', $userId))
+            ->when(! $identity['can_manage'], fn ($query) => $query->where('user_id', $identity['user_id']))
             ->when($validated['hotel_id'] ?? null, fn ($query, $hotelId) => $query->where('hotel_id', $hotelId))
             ->when($validated['room_id'] ?? null, fn ($query, $roomId) => $query->where('room_id', $roomId))
             ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
@@ -36,15 +42,18 @@ class BookingController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'user_id' => ['required', 'integer', 'min:1'],
             'hotel_id' => ['required', 'integer', 'min:1'],
             'room_id' => ['required', 'integer', 'min:1'],
             'check_in' => ['required', 'date'],
             'check_out' => ['required', 'date', 'after:check_in'],
             'quantity' => ['sometimes', 'integer', 'min:1', 'max:50'],
-            'total_amount' => ['required', 'numeric', 'min:0'],
-            'currency' => ['required', 'string', 'size:3'],
         ]);
+
+        $identity = $this->identity($request);
+
+        if ($identity instanceof JsonResponse) {
+            return $identity;
+        }
 
         $quantity = $validated['quantity'] ?? 1;
         $inventoryPayload = $this->inventoryPayload($validated, $quantity);
@@ -54,12 +63,25 @@ class BookingController extends Controller
             return $reservation;
         }
 
+        if (! isset($reservation['data']['total_amount'], $reservation['data']['currency'])) {
+            $this->postInventory('/api/inventory/releases', $inventoryPayload);
+
+            return response()->json([
+                'message' => 'Inventory service did not return authoritative pricing.',
+            ], 502);
+        }
+
         try {
             $booking = Booking::query()->create([
-                ...$validated,
+                'user_id' => $identity['user_id'],
+                'hotel_id' => $validated['hotel_id'],
+                'room_id' => $validated['room_id'],
+                'check_in' => $validated['check_in'],
+                'check_out' => $validated['check_out'],
                 'quantity' => $quantity,
                 'status' => Booking::STATUS_PENDING_PAYMENT,
-                'currency' => strtoupper($validated['currency']),
+                'total_amount' => $reservation['data']['total_amount'],
+                'currency' => strtoupper($reservation['data']['currency']),
             ]);
         } catch (Throwable $exception) {
             $this->postInventory('/api/inventory/releases', $inventoryPayload);
@@ -102,15 +124,27 @@ class BookingController extends Controller
         ], 201);
     }
 
-    public function show(Booking $booking): JsonResponse
+    public function show(Request $request, Booking $booking): JsonResponse
     {
+        $authorization = $this->authorizeBookingAccess($request, $booking);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         return response()->json([
             'data' => $booking,
         ]);
     }
 
-    public function cancel(Booking $booking): JsonResponse
+    public function cancel(Request $request, Booking $booking): JsonResponse
     {
+        $authorization = $this->authorizeBookingAccess($request, $booking);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         if ($booking->status === Booking::STATUS_CANCELLED) {
             return response()->json([
                 'data' => $booking,
@@ -148,8 +182,14 @@ class BookingController extends Controller
         ]);
     }
 
-    public function confirmPayment(Booking $booking): JsonResponse
+    public function confirmPayment(Request $request, Booking $booking): JsonResponse
     {
+        $authorization = $this->authorizeBookingAccess($request, $booking);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         if ($booking->status === Booking::STATUS_CONFIRMED) {
             return response()->json([
                 'data' => $booking,
@@ -196,6 +236,12 @@ class BookingController extends Controller
 
     public function failPayment(Request $request, Booking $booking): JsonResponse
     {
+        $authorization = $this->authorizeBookingAccess($request, $booking);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         if ($booking->status === Booking::STATUS_PAYMENT_FAILED) {
             return response()->json([
                 'data' => $booking,
@@ -363,6 +409,91 @@ class BookingController extends Controller
         }
 
         return $response->json('data');
+    }
+
+    /**
+     * @return JsonResponse|array{user_id: int, roles: list<string>, can_manage: bool}
+     */
+    private function identity(Request $request): JsonResponse|array
+    {
+        $userId = $request->headers->get('X-StayHub-User-Id')
+            ?? $request->headers->get('X-User-Id')
+            ?? Arr::get($this->jwtClaims($request), 'stayhub_user_id')
+            ?? Arr::get($this->jwtClaims($request), 'user_id');
+
+        if ($userId === null) {
+            $username = Arr::get($this->jwtClaims($request), 'preferred_username');
+            $userId = match ($username) {
+                'customer' => 1,
+                'manager' => 2,
+                'admin' => 3,
+                default => null,
+            };
+        }
+
+        if (! is_numeric($userId) || (int) $userId < 1) {
+            return response()->json([
+                'message' => 'Authenticated user identity is required.',
+            ], 401);
+        }
+
+        $rolesHeader = $request->headers->get('X-StayHub-Roles') ?? $request->headers->get('X-User-Roles');
+        $roles = $rolesHeader
+            ? array_map('trim', explode(',', $rolesHeader))
+            : (array) Arr::get($this->jwtClaims($request), 'realm_access.roles', []);
+
+        return [
+            'user_id' => (int) $userId,
+            'roles' => array_values(array_filter($roles)),
+            'can_manage' => count(array_intersect($roles, ['admin', 'manager'])) > 0,
+        ];
+    }
+
+    private function authorizeBookingAccess(Request $request, Booking $booking): ?JsonResponse
+    {
+        $identity = $this->identity($request);
+
+        if ($identity instanceof JsonResponse) {
+            return $identity;
+        }
+
+        if (! $identity['can_manage'] && $booking->user_id !== $identity['user_id']) {
+            return response()->json([
+                'message' => 'You are not allowed to access this booking.',
+            ], 403);
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function jwtClaims(Request $request): array
+    {
+        $authorization = $request->bearerToken();
+
+        if ($authorization === null) {
+            return [];
+        }
+
+        $parts = explode('.', $authorization);
+
+        if (count($parts) < 2) {
+            return [];
+        }
+
+        $payload = strtr($parts[1], '-_', '+/');
+        $payload .= str_repeat('=', (4 - strlen($payload) % 4) % 4);
+        $decoded = base64_decode($payload, true);
+
+        if ($decoded === false) {
+            return [];
+        }
+
+        $claims = json_decode($decoded, true);
+
+        return is_array($claims) ? $claims : [];
     }
 
     /**

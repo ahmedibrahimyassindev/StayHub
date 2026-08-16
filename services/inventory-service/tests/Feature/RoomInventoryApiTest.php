@@ -28,7 +28,9 @@ class RoomInventoryApiTest extends TestCase
             'check_out' => '2026-09-02',
             'quantity' => 1,
         ])->assertOk()
-            ->assertJsonPath('data.nights_reserved', 1);
+            ->assertJsonPath('data.nights_reserved', 1)
+            ->assertJsonPath('data.total_amount', '180.00')
+            ->assertJsonPath('data.currency', 'USD');
 
         $this->assertDatabaseHas('room_inventory', [
             'room_id' => 1,
@@ -70,5 +72,30 @@ class RoomInventoryApiTest extends TestCase
             'quantity' => 1,
         ])->assertConflict()
             ->assertJsonPath('failed_date', '2026-09-01');
+    }
+
+    public function test_reservation_returns_total_for_each_night_and_room_quantity(): void
+    {
+        foreach (['2026-09-01', '2026-09-02'] as $date) {
+            RoomInventory::query()->create([
+                'room_id' => 1,
+                'date' => $date,
+                'total_rooms' => 4,
+                'available_rooms' => 4,
+                'reserved_rooms' => 0,
+                'price' => 150.00,
+                'currency' => 'USD',
+            ]);
+        }
+
+        $this->postJson('/api/inventory/reservations', [
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-03',
+            'quantity' => 2,
+        ])->assertOk()
+            ->assertJsonPath('data.nights_reserved', 2)
+            ->assertJsonPath('data.total_amount', '600.00')
+            ->assertJsonPath('data.currency', 'USD');
     }
 }

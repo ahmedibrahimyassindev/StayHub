@@ -1,0 +1,1006 @@
+openapi: 3.1.0
+info:
+  title: StayHub API
+  version: 0.1.0
+  description: APISIX-facing API contract for the StayHub hotel reservation platform.
+servers:
+  - url: http://localhost:9080
+    description: Local APISIX gateway
+security:
+  - bearerAuth: []
+tags:
+  - name: Health
+  - name: Hotels
+  - name: Rooms
+  - name: Inventory
+  - name: Bookings
+  - name: Payments
+  - name: Search
+  - name: Users
+  - name: Notifications
+paths:
+  /api/hotels/health:
+    get:
+      tags: [Health]
+      security: []
+      summary: Hotel service health check
+      responses:
+        '200':
+          description: Service is healthy
+  /api/inventory/health:
+    get:
+      tags: [Health]
+      security: []
+      summary: Inventory service health check
+      responses:
+        '200':
+          description: Service is healthy
+  /api/bookings/health:
+    get:
+      tags: [Health]
+      security: []
+      summary: Booking service health check
+      responses:
+        '200':
+          description: Service is healthy
+  /api/payments/health:
+    get:
+      tags: [Health]
+      security: []
+      summary: Payment service health check
+      responses:
+        '200':
+          description: Service is healthy
+  /api/search/health:
+    get:
+      tags: [Health]
+      security: []
+      summary: Search service health check
+      responses:
+        '200':
+          description: Service is healthy
+  /api/users/health:
+    get:
+      tags: [Health]
+      security: []
+      summary: User service health check
+      responses:
+        '200':
+          description: Service is healthy
+  /api/notifications/health:
+    get:
+      tags: [Health]
+      security: []
+      summary: Notification service health check
+      responses:
+        '200':
+          description: Service is healthy
+
+  /api/hotels:
+    get:
+      tags: [Hotels]
+      summary: List hotels
+      parameters:
+        - $ref: '#/components/parameters/City'
+        - $ref: '#/components/parameters/Country'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, active, inactive]
+        - name: q
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Paginated hotels
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedHotels'
+    post:
+      tags: [Hotels]
+      summary: Create hotel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HotelInput'
+      responses:
+        '201':
+          description: Hotel created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotelResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /api/hotels/{hotel}:
+    parameters:
+      - $ref: '#/components/parameters/HotelId'
+    get:
+      tags: [Hotels]
+      summary: Show hotel
+      responses:
+        '200':
+          description: Hotel
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotelResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Hotels]
+      summary: Update hotel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HotelInput'
+      responses:
+        '200':
+          description: Hotel updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HotelResponse'
+    delete:
+      tags: [Hotels]
+      summary: Delete hotel
+      responses:
+        '204':
+          description: Hotel deleted
+
+  /api/hotels/{hotel}/rooms:
+    parameters:
+      - $ref: '#/components/parameters/HotelId'
+    get:
+      tags: [Rooms]
+      summary: List hotel rooms
+      parameters:
+        - name: room_type
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, active, inactive]
+        - name: min_capacity
+          in: query
+          schema:
+            type: integer
+        - name: max_price
+          in: query
+          schema:
+            type: number
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Paginated rooms
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRooms'
+    post:
+      tags: [Rooms]
+      summary: Create hotel room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomInput'
+      responses:
+        '201':
+          description: Room created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomResponse'
+  /api/hotels/{hotel}/rooms/{room}:
+    parameters:
+      - $ref: '#/components/parameters/HotelId'
+      - $ref: '#/components/parameters/RoomId'
+    get:
+      tags: [Rooms]
+      summary: Show room
+      responses:
+        '200':
+          description: Room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomResponse'
+    put:
+      tags: [Rooms]
+      summary: Update room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomInput'
+      responses:
+        '200':
+          description: Room updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomResponse'
+    delete:
+      tags: [Rooms]
+      summary: Delete room
+      responses:
+        '204':
+          description: Room deleted
+
+  /api/inventory:
+    get:
+      tags: [Inventory]
+      summary: List room inventory
+      parameters:
+        - name: room_id
+          in: query
+          schema:
+            type: integer
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Paginated room inventory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedInventory'
+    put:
+      tags: [Inventory]
+      summary: Upsert room inventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryInput'
+      responses:
+        '200':
+          description: Inventory upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryResponse'
+  /api/inventory/reservations:
+    post:
+      tags: [Inventory]
+      summary: Reserve room inventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryReservationInput'
+      responses:
+        '200':
+          description: Inventory reserved
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/inventory/releases:
+    post:
+      tags: [Inventory]
+      summary: Release room inventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryReservationInput'
+      responses:
+        '200':
+          description: Inventory released
+
+  /api/bookings:
+    get:
+      tags: [Bookings]
+      summary: List bookings
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+        - name: hotel_id
+          in: query
+          schema:
+            type: integer
+        - name: room_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/BookingStatus'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Paginated bookings
+    post:
+      tags: [Bookings]
+      summary: Create booking
+      description: Reserves inventory, creates a pending payment, and creates a notification.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingInput'
+      responses:
+        '201':
+          description: Booking created
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/bookings/{booking}:
+    parameters:
+      - $ref: '#/components/parameters/BookingId'
+    get:
+      tags: [Bookings]
+      summary: Show booking
+      responses:
+        '200':
+          description: Booking
+  /api/bookings/{booking}/cancel:
+    post:
+      tags: [Bookings]
+      summary: Cancel booking and release inventory
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Booking cancelled
+  /api/bookings/{booking}/confirm-payment:
+    post:
+      tags: [Bookings]
+      summary: Mark booking payment succeeded
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      responses:
+        '200':
+          description: Booking confirmed
+  /api/bookings/{booking}/fail-payment:
+    post:
+      tags: [Bookings]
+      summary: Mark booking payment failed and release inventory
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                failure_reason:
+                  type: string
+      responses:
+        '200':
+          description: Booking marked payment_failed
+
+  /api/payments:
+    get:
+      tags: [Payments]
+      summary: List payments
+      parameters:
+        - name: booking_id
+          in: query
+          schema:
+            type: integer
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/PaymentStatus'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Paginated payments
+    post:
+      tags: [Payments]
+      summary: Create mock payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentInput'
+      responses:
+        '201':
+          description: Payment created
+  /api/payments/{payment}:
+    parameters:
+      - $ref: '#/components/parameters/PaymentId'
+    get:
+      tags: [Payments]
+      summary: Show payment
+      responses:
+        '200':
+          description: Payment
+  /api/payments/{payment}/succeed:
+    post:
+      tags: [Payments]
+      summary: Mark pending payment succeeded
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Payment succeeded
+  /api/payments/{payment}/fail:
+    post:
+      tags: [Payments]
+      summary: Mark pending payment failed
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                failure_reason:
+                  type: string
+      responses:
+        '200':
+          description: Payment failed
+  /api/payments/{payment}/refund:
+    post:
+      tags: [Payments]
+      summary: Refund succeeded payment
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Payment refunded
+
+  /api/search/hotels:
+    get:
+      tags: [Search]
+      summary: Search available hotels and rooms
+      parameters:
+        - $ref: '#/components/parameters/City'
+        - $ref: '#/components/parameters/Country'
+        - name: check_in
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: check_out
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: guests
+          in: query
+          schema:
+            type: integer
+        - name: max_price
+          in: query
+          schema:
+            type: number
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Available hotels with rooms and inventory
+
+  /api/users/profiles:
+    get:
+      tags: [Users]
+      summary: List user profiles
+      parameters:
+        - name: role
+          in: query
+          schema:
+            $ref: '#/components/schemas/UserRole'
+        - name: email
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Paginated user profiles
+    post:
+      tags: [Users]
+      summary: Create user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileInput'
+      responses:
+        '201':
+          description: Profile created
+  /api/users/profiles/keycloak/{keycloakUserId}:
+    get:
+      tags: [Users]
+      summary: Show user profile by Keycloak id
+      parameters:
+        - name: keycloakUserId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User profile
+  /api/users/profiles/{profile}:
+    parameters:
+      - $ref: '#/components/parameters/ProfileId'
+    get:
+      tags: [Users]
+      summary: Show user profile
+      responses:
+        '200':
+          description: User profile
+    put:
+      tags: [Users]
+      summary: Update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileInput'
+      responses:
+        '200':
+          description: Profile updated
+
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications
+      parameters:
+        - name: recipient_user_id
+          in: query
+          schema:
+            type: integer
+        - name: channel
+          in: query
+          schema:
+            type: string
+            enum: [email, sms, in_app]
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/NotificationStatus'
+        - name: unread
+          in: query
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Paginated notifications
+    post:
+      tags: [Notifications]
+      summary: Create notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationInput'
+      responses:
+        '201':
+          description: Notification created
+  /api/notifications/{notification}:
+    parameters:
+      - $ref: '#/components/parameters/NotificationId'
+    get:
+      tags: [Notifications]
+      summary: Show notification
+      responses:
+        '200':
+          description: Notification
+  /api/notifications/{notification}/send:
+    post:
+      tags: [Notifications]
+      summary: Mark queued notification sent
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          description: Notification sent
+  /api/notifications/{notification}/fail:
+    post:
+      tags: [Notifications]
+      summary: Mark queued notification failed
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                failure_reason:
+                  type: string
+      responses:
+        '200':
+          description: Notification failed
+  /api/notifications/{notification}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark notification read
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          description: Notification marked read
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak access token from the `stayhub` realm.
+  parameters:
+    City:
+      name: city
+      in: query
+      schema:
+        type: string
+      example: Cairo
+    Country:
+      name: country
+      in: query
+      schema:
+        type: string
+      example: Egypt
+    PerPage:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+    HotelId:
+      name: hotel
+      in: path
+      required: true
+      schema:
+        type: integer
+    RoomId:
+      name: room
+      in: path
+      required: true
+      schema:
+        type: integer
+    BookingId:
+      name: booking
+      in: path
+      required: true
+      schema:
+        type: integer
+    PaymentId:
+      name: payment
+      in: path
+      required: true
+      schema:
+        type: integer
+    ProfileId:
+      name: profile
+      in: path
+      required: true
+      schema:
+        type: integer
+    NotificationId:
+      name: notification
+      in: path
+      required: true
+      schema:
+        type: integer
+  responses:
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Request conflicts with current state
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+  schemas:
+    BookingStatus:
+      type: string
+      enum: [pending_payment, confirmed, cancelled, payment_failed]
+    PaymentStatus:
+      type: string
+      enum: [pending, succeeded, failed, refunded]
+    NotificationStatus:
+      type: string
+      enum: [queued, sent, failed]
+    UserRole:
+      type: string
+      enum: [CUSTOMER, HOTEL_MANAGER, ADMIN]
+    HotelInput:
+      type: object
+      required: [name, country, city, address]
+      properties:
+        name:
+          type: string
+          example: Nile View Cairo
+        slug:
+          type: string
+          example: nile-view-cairo
+        description:
+          type: string
+        country:
+          type: string
+          example: Egypt
+        city:
+          type: string
+          example: Cairo
+        address:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        rating:
+          type: number
+        status:
+          type: string
+          enum: [draft, active, inactive]
+    Hotel:
+      allOf:
+        - $ref: '#/components/schemas/HotelInput'
+        - type: object
+          properties:
+            id:
+              type: integer
+            created_at:
+              type: string
+            updated_at:
+              type: string
+    RoomInput:
+      type: object
+      required: [room_type, name, capacity, base_price, currency]
+      properties:
+        room_type:
+          type: string
+          enum: [single, double, suite, family]
+        name:
+          type: string
+        description:
+          type: string
+        capacity:
+          type: integer
+        base_price:
+          type: number
+        currency:
+          type: string
+          example: USD
+        amenities:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [draft, active, inactive]
+    Room:
+      allOf:
+        - $ref: '#/components/schemas/RoomInput'
+        - type: object
+          properties:
+            id:
+              type: integer
+            hotel_id:
+              type: integer
+    InventoryInput:
+      type: object
+      required: [room_id, date, total_rooms, available_rooms, price, currency]
+      properties:
+        room_id:
+          type: integer
+        date:
+          type: string
+          format: date
+        total_rooms:
+          type: integer
+        available_rooms:
+          type: integer
+        reserved_rooms:
+          type: integer
+        price:
+          type: number
+        currency:
+          type: string
+          example: USD
+    Inventory:
+      allOf:
+        - $ref: '#/components/schemas/InventoryInput'
+        - type: object
+          properties:
+            id:
+              type: integer
+    InventoryReservationInput:
+      type: object
+      required: [room_id, check_in, check_out]
+      properties:
+        room_id:
+          type: integer
+        check_in:
+          type: string
+          format: date
+        check_out:
+          type: string
+          format: date
+        quantity:
+          type: integer
+          default: 1
+    BookingInput:
+      type: object
+      required: [user_id, hotel_id, room_id, check_in, check_out, total_amount, currency]
+      properties:
+        user_id:
+          type: integer
+        hotel_id:
+          type: integer
+        room_id:
+          type: integer
+        check_in:
+          type: string
+          format: date
+        check_out:
+          type: string
+          format: date
+        quantity:
+          type: integer
+          default: 1
+        total_amount:
+          type: number
+        currency:
+          type: string
+          example: USD
+    PaymentInput:
+      type: object
+      required: [booking_id, user_id, amount, currency]
+      properties:
+        booking_id:
+          type: integer
+        user_id:
+          type: integer
+        amount:
+          type: number
+        currency:
+          type: string
+          example: USD
+        provider:
+          type: string
+          example: mock
+    UserProfileInput:
+      type: object
+      required: [keycloak_user_id, email, first_name, last_name, role]
+      properties:
+        keycloak_user_id:
+          type: string
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone:
+          type: string
+        role:
+          $ref: '#/components/schemas/UserRole'
+        locale:
+          type: string
+        metadata:
+          type: object
+    NotificationInput:
+      type: object
+      required: [recipient_user_id, channel, type, subject, body]
+      properties:
+        recipient_user_id:
+          type: integer
+        channel:
+          type: string
+          enum: [email, sms, in_app]
+        type:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        payload:
+          type: object
+    HotelResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Hotel'
+    RoomResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Room'
+    InventoryResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Inventory'
+    PaginatedHotels:
+      allOf:
+        - $ref: '#/components/schemas/Pagination'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Hotel'
+    PaginatedRooms:
+      allOf:
+        - $ref: '#/components/schemas/Pagination'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Room'
+    PaginatedInventory:
+      allOf:
+        - $ref: '#/components/schemas/Pagination'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Inventory'
+    Pagination:
+      type: object
+      properties:
+        current_page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+        errors:
+          type: object

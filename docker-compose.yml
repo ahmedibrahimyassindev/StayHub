@@ -41,6 +41,16 @@ services:
       - "9443:9443"
       - "9180:9180"
 
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    container_name: stayhub-swagger-ui
+    environment:
+      SWAGGER_JSON: /docs/openapi.yaml
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./docs:/docs:ro
+
   keycloak-db:
     image: postgres:16-alpine
     container_name: stayhub-keycloak-db

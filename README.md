@@ -40,6 +40,30 @@ Run the full gateway smoke test:
 powershell -ExecutionPolicy Bypass -File .\gateway\apisix\e2e-smoke.ps1
 ```
 
+## CI/CD
+
+GitHub Actions workflows live in `.github/workflows`.
+
+- `CI`: runs on pull requests and pushes to `main`. It validates `docker-compose.yml`, installs each Laravel service, lints PHP files, runs migrations against SQLite, and runs the service test suite.
+- `Publish Images`: runs on pushes to `main` that change service code, or manually from GitHub Actions. It builds every service Docker image and pushes it to GitHub Container Registry.
+
+Published image names:
+
+```text
+ghcr.io/<owner>/stayhub-hotel-service
+ghcr.io/<owner>/stayhub-inventory-service
+ghcr.io/<owner>/stayhub-booking-service
+ghcr.io/<owner>/stayhub-payment-service
+ghcr.io/<owner>/stayhub-search-service
+ghcr.io/<owner>/stayhub-user-service
+ghcr.io/<owner>/stayhub-notification-service
+```
+
+Tags:
+
+- `latest` for the default branch
+- commit SHA for every published image
+
 ## Demo Users
 
 All demo users use password `password`.

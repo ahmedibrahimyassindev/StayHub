@@ -56,3 +56,4 @@ Implemented domains:
 - `payment-service`: payments table, seed data, list/create/show APIs, and mock succeed/fail/refund workflow.
 - `search-service`: hotel availability search API that aggregates active hotels/rooms with inventory availability.
 - `user-service`: user profiles table, seed data for demo Keycloak users, and profile list/create/show/update APIs.
+- `notification-service`: notifications table, seed data, list/create/show APIs, and mock send/fail/read workflow.

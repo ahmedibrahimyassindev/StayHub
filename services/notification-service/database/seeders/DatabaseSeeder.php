@@ -2,7 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
+use App\Models\NotificationMessage;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -15,11 +15,17 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+        NotificationMessage::query()->firstOrCreate([
+            'recipient_user_id' => 1,
+            'type' => 'booking.created',
+            'subject' => 'Your StayHub booking is pending payment',
+        ], [
+            'channel' => 'email',
+            'body' => 'Complete payment to confirm your booking.',
+            'payload' => [
+                'booking_id' => 1,
+            ],
+            'status' => NotificationMessage::STATUS_QUEUED,
         ]);
     }
 }

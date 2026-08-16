@@ -72,6 +72,7 @@ GitHub Actions workflows live in `.github/workflows`.
 
 - `CI`: runs on pull requests and pushes to `main`. It validates `docker-compose.yml`, installs each Laravel service, lints PHP files, runs migrations against SQLite, and runs the service test suite.
 - `Publish Images`: runs on pushes to `main` that change service code, or manually from GitHub Actions. It builds every service Docker image and pushes it to GitHub Container Registry.
+- `Deploy`: manual production deployment workflow. It requires `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, and `DEPLOY_PATH` repository/environment secrets.
 
 Published image names:
 

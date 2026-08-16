@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'keycloak' => [
+        'allow_test_identity_headers' => env('ALLOW_TEST_IDENTITY_HEADERS', false),
+    ],
+
 ];

@@ -4,12 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\Hotel;
 use App\Models\Room;
+use App\Security\ManagerAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class RoomController extends Controller
 {
+    public function __construct(
+        private readonly ManagerAccess $access,
+    ) {
+    }
+
     public function index(Request $request, Hotel $hotel): JsonResponse
     {
         $validated = $request->validate([
@@ -33,6 +39,12 @@ class RoomController extends Controller
 
     public function store(Request $request, Hotel $hotel): JsonResponse
     {
+        $authorization = $this->access->requireManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $room = $hotel->rooms()->create($this->validateRoom($request));
 
         return response()->json([
@@ -51,6 +63,12 @@ class RoomController extends Controller
 
     public function update(Request $request, Hotel $hotel, Room $room): JsonResponse
     {
+        $authorization = $this->access->requireManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $this->ensureRoomBelongsToHotel($hotel, $room);
 
         $room->update($this->validateRoom($request, $room));
@@ -60,8 +78,14 @@ class RoomController extends Controller
         ]);
     }
 
-    public function destroy(Hotel $hotel, Room $room): JsonResponse
+    public function destroy(Request $request, Hotel $hotel, Room $room): JsonResponse
     {
+        $authorization = $this->access->requireManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $this->ensureRoomBelongsToHotel($hotel, $room);
 
         $room->delete();
@@ -94,4 +118,3 @@ class RoomController extends Controller
         abort_unless($room->hotel_id === $hotel->id, 404);
     }
 }
-

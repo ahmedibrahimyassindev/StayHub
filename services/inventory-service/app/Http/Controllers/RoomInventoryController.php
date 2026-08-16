@@ -7,6 +7,7 @@ use App\Http\Requests\ReleaseInventoryRequest;
 use App\Http\Requests\ReserveInventoryRequest;
 use App\Http\Requests\UpsertInventoryRequest;
 use App\Models\RoomInventory;
+use App\Security\InventoryAccess;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -14,6 +15,11 @@ use Illuminate\Validation\ValidationException;
 
 class RoomInventoryController extends Controller
 {
+    public function __construct(
+        private readonly InventoryAccess $access,
+    ) {
+    }
+
     public function index(InventoryIndexRequest $request): JsonResponse
     {
         $validated = $request->validated();
@@ -31,6 +37,12 @@ class RoomInventoryController extends Controller
 
     public function upsert(UpsertInventoryRequest $request): JsonResponse
     {
+        $authorization = $this->access->requireManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $validated = $request->validated();
 
         $reservedRooms = $validated['reserved_rooms'] ?? 0;
@@ -62,6 +74,12 @@ class RoomInventoryController extends Controller
 
     public function reserve(ReserveInventoryRequest $request): JsonResponse
     {
+        $authorization = $this->access->requireService($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $validated = $request->validated();
 
         $quantity = $validated['quantity'] ?? 1;
@@ -109,6 +127,12 @@ class RoomInventoryController extends Controller
 
     public function release(ReleaseInventoryRequest $request): JsonResponse
     {
+        $authorization = $this->access->requireService($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $validated = $request->validated();
 
         $quantity = $validated['quantity'] ?? 1;

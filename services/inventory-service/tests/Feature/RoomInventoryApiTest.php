@@ -10,6 +10,25 @@ class RoomInventoryApiTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const SERVICE_HEADERS = [
+        'X-Service-Token' => 'test-internal-token',
+    ];
+
+    private const MANAGER_HEADERS = [
+        'X-Test-User-Id' => '2',
+        'X-Test-Roles' => 'HOTEL_MANAGER',
+    ];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'services.internal.token' => 'test-internal-token',
+            'services.keycloak.allow_test_identity_headers' => true,
+        ]);
+    }
+
     public function test_inventory_can_be_reserved_and_released(): void
     {
         RoomInventory::query()->create([
@@ -27,7 +46,7 @@ class RoomInventoryApiTest extends TestCase
             'check_in' => '2026-09-01',
             'check_out' => '2026-09-02',
             'quantity' => 1,
-        ])->assertOk()
+        ], self::SERVICE_HEADERS)->assertOk()
             ->assertJsonPath('data.nights_reserved', 1)
             ->assertJsonPath('data.total_amount', '180.00')
             ->assertJsonPath('data.currency', 'USD');
@@ -43,7 +62,7 @@ class RoomInventoryApiTest extends TestCase
             'check_in' => '2026-09-01',
             'check_out' => '2026-09-02',
             'quantity' => 1,
-        ])->assertOk()
+        ], self::SERVICE_HEADERS)->assertOk()
             ->assertJsonPath('data.nights_released', 1);
 
         $this->assertDatabaseHas('room_inventory', [
@@ -70,7 +89,7 @@ class RoomInventoryApiTest extends TestCase
             'check_in' => '2026-09-01',
             'check_out' => '2026-09-02',
             'quantity' => 1,
-        ])->assertConflict()
+        ], self::SERVICE_HEADERS)->assertConflict()
             ->assertJsonPath('failed_date', '2026-09-01');
     }
 
@@ -93,7 +112,7 @@ class RoomInventoryApiTest extends TestCase
             'check_in' => '2026-09-01',
             'check_out' => '2026-09-03',
             'quantity' => 2,
-        ])->assertOk()
+        ], self::SERVICE_HEADERS)->assertOk()
             ->assertJsonPath('data.nights_reserved', 2)
             ->assertJsonPath('data.total_amount', '600.00')
             ->assertJsonPath('data.currency', 'USD');
@@ -118,8 +137,8 @@ class RoomInventoryApiTest extends TestCase
             'quantity' => 1,
         ];
 
-        $this->postJson('/api/inventory/reservations', $payload)->assertOk();
-        $this->postJson('/api/inventory/reservations', $payload)
+        $this->postJson('/api/inventory/reservations', $payload, self::SERVICE_HEADERS)->assertOk();
+        $this->postJson('/api/inventory/reservations', $payload, self::SERVICE_HEADERS)
             ->assertConflict()
             ->assertJsonPath('failed_date', '2026-09-01');
 
@@ -128,5 +147,39 @@ class RoomInventoryApiTest extends TestCase
             'available_rooms' => 0,
             'reserved_rooms' => 1,
         ]);
+    }
+
+    public function test_inventory_upsert_requires_manager(): void
+    {
+        $payload = [
+            'room_id' => 1,
+            'date' => '2026-09-01',
+            'total_rooms' => 2,
+            'available_rooms' => 2,
+            'reserved_rooms' => 0,
+            'price' => 180.00,
+            'currency' => 'USD',
+        ];
+
+        $this->putJson('/api/inventory', $payload, [
+            'X-Test-User-Id' => '1',
+            'X-Test-Roles' => 'CUSTOMER',
+        ])->assertForbidden()
+            ->assertJsonPath('message', 'Manager or admin role is required.');
+
+        $this->putJson('/api/inventory', $payload, self::MANAGER_HEADERS)
+            ->assertOk()
+            ->assertJsonPath('data.room_id', 1);
+    }
+
+    public function test_inventory_reservation_requires_internal_service_token(): void
+    {
+        $this->postJson('/api/inventory/reservations', [
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-02',
+            'quantity' => 1,
+        ])->assertForbidden()
+            ->assertJsonPath('message', 'Internal service token is required.');
     }
 }

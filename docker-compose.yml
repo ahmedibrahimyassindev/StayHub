@@ -147,7 +147,6 @@ services:
       KEYCLOAK_ISSUER: http://localhost:8080/realms/stayhub
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/stayhub/protocol/openid-connect/certs
       KEYCLOAK_AUDIENCE: stayhub-api
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
       KAFKA_BROKERS: kafka:9092
     ports:
       - "8001:8000"
@@ -181,6 +180,7 @@ services:
       KEYCLOAK_ISSUER: http://localhost:8080/realms/stayhub
       KEYCLOAK_JWKS_URL: http://keycloak:8080/realms/stayhub/protocol/openid-connect/certs
       KEYCLOAK_AUDIENCE: stayhub-api
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
       KAFKA_BROKERS: kafka:9092
     ports:
       - "8002:8000"
@@ -273,6 +273,7 @@ services:
       REDIS_PORT: 6379
       KEYCLOAK_BASE_URL: http://keycloak:8080
       KEYCLOAK_REALM: stayhub
+      KEYCLOAK_AUDIENCE: stayhub-api
       KAFKA_BROKERS: kafka:9092
     ports:
       - "8005:8000"
@@ -303,6 +304,8 @@ services:
       REDIS_PORT: 6379
       KEYCLOAK_BASE_URL: http://keycloak:8080
       KEYCLOAK_REALM: stayhub
+      KEYCLOAK_AUDIENCE: stayhub-api
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?Set INTERNAL_SERVICE_TOKEN in .env}
       KAFKA_BROKERS: kafka:9092
     ports:
       - "8006:8000"

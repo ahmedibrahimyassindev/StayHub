@@ -61,8 +61,10 @@ function Assert-Status {
     }
 }
 
-$token = Get-Token -Username 'customer'
-$headers = @{ Authorization = "Bearer $token" }
+$customerToken = Get-Token -Username 'customer'
+$managerToken = Get-Token -Username 'manager'
+$headers = @{ Authorization = "Bearer $customerToken" }
+$managerHeaders = @{ Authorization = "Bearer $managerToken" }
 
 Write-Output 'Checking public health routes...'
 @(
@@ -83,7 +85,7 @@ $checkOut = '2026-12-11'
 $smokeSlug = "stayhub-smoke-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
 
 Write-Output 'Preparing hotel catalog...'
-$hotelResponse = Invoke-Json -Method Post -Path '/api/hotels' -Headers $headers -Body @{
+$hotelResponse = Invoke-Json -Method Post -Path '/api/hotels' -Headers $managerHeaders -Body @{
     name = 'StayHub Smoke Hotel'
     slug = $smokeSlug
     description = 'Temporary hotel for the APISIX smoke flow.'
@@ -96,7 +98,7 @@ $hotelResponse = Invoke-Json -Method Post -Path '/api/hotels' -Headers $headers 
 
 $hotelId = $hotelResponse.data.id
 
-$roomResponse = Invoke-Json -Method Post -Path "/api/hotels/$hotelId/rooms" -Headers $headers -Body @{
+$roomResponse = Invoke-Json -Method Post -Path "/api/hotels/$hotelId/rooms" -Headers $managerHeaders -Body @{
     room_type = 'double'
     name = 'Smoke Double Room'
     description = 'Temporary room for the APISIX smoke flow.'
@@ -110,7 +112,7 @@ $roomResponse = Invoke-Json -Method Post -Path "/api/hotels/$hotelId/rooms" -Hea
 $roomId = $roomResponse.data.id
 
 Write-Output 'Preparing inventory...'
-Invoke-Json -Method Put -Path '/api/inventory' -Headers $headers -Body @{
+Invoke-Json -Method Put -Path '/api/inventory' -Headers $managerHeaders -Body @{
     room_id = $roomId
     date = $checkIn
     total_rooms = 2

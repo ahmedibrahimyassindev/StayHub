@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Hotel;
+use App\Security\ManagerAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -10,6 +11,11 @@ use Illuminate\Validation\Rule;
 
 class HotelController extends Controller
 {
+    public function __construct(
+        private readonly ManagerAccess $access,
+    ) {
+    }
+
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -39,6 +45,12 @@ class HotelController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $authorization = $this->access->requireManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $validated = $this->validateHotel($request);
         $validated['slug'] ??= $this->uniqueSlug($validated['name']);
 
@@ -58,6 +70,12 @@ class HotelController extends Controller
 
     public function update(Request $request, Hotel $hotel): JsonResponse
     {
+        $authorization = $this->access->requireManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $validated = $this->validateHotel($request, $hotel);
 
         if (isset($validated['name']) && ! isset($validated['slug'])) {
@@ -71,8 +89,14 @@ class HotelController extends Controller
         ]);
     }
 
-    public function destroy(Hotel $hotel): JsonResponse
+    public function destroy(Request $request, Hotel $hotel): JsonResponse
     {
+        $authorization = $this->access->requireManager($request);
+
+        if ($authorization instanceof JsonResponse) {
+            return $authorization;
+        }
+
         $hotel->delete();
 
         return response()->json(status: 204);
@@ -123,4 +147,3 @@ class HotelController extends Controller
         return $slug;
     }
 }
-

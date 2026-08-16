@@ -92,6 +92,8 @@ class BookingWorkflowApiTest extends TestCase
             && $request['user_id'] === 1
             && $request['amount'] === '360.00'
             && $request['currency'] === 'USD');
+        Http::assertSent(fn ($request) => $request->url() === 'http://inventory-service:8000/api/inventory/reservations'
+            && $request->header('X-Service-Token')[0] === 'test-internal-token');
     }
 
     public function test_booking_creation_is_idempotent_for_same_user_and_key(): void

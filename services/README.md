@@ -50,4 +50,4 @@ powershell -ExecutionPolicy Bypass -File .\gateway\apisix\auth-test.ps1
 
 Implemented domains:
 
-- `hotel-service`: hotels table, model, factory, seed data, and CRUD/list API.
+- `hotel-service`: hotels and rooms tables, models, factories, seed data, and CRUD/list APIs.

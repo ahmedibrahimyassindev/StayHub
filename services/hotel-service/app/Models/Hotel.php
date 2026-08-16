@@ -6,6 +6,7 @@ use Database\Factories\HotelFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
@@ -33,5 +34,9 @@ class Hotel extends Model
             'rating' => 'decimal:2',
         ];
     }
-}
 
+    public function rooms(): HasMany
+    {
+        return $this->hasMany(Room::class);
+    }
+}

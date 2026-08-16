@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 class HotelSearchApiTest extends TestCase
@@ -12,7 +13,10 @@ class HotelSearchApiTest extends TestCase
         config([
             'services.hotel.url' => 'http://hotel-service:8000',
             'services.inventory.url' => 'http://inventory-service:8000',
+            'cache.default' => 'array',
+            'services.search.cache_ttl' => 30,
         ]);
+        Cache::flush();
 
         Http::fake([
             'hotel-service:8000/api/hotels/1/rooms*' => Http::response([
@@ -49,6 +53,15 @@ class HotelSearchApiTest extends TestCase
         $this->getJson('/api/search/hotels?city=Cairo&check_in=2026-09-01&check_out=2026-09-03&guests=2')
             ->assertOk()
             ->assertJsonPath('meta.hotels_available', 1)
+            ->assertJsonPath('meta.cache_hit', false)
             ->assertJsonPath('data.0.rooms.0.room.id', 10);
+
+        $this->getJson('/api/search/hotels?city=Cairo&check_in=2026-09-01&check_out=2026-09-03&guests=2')
+            ->assertOk()
+            ->assertJsonPath('meta.hotels_available', 1)
+            ->assertJsonPath('meta.cache_hit', true)
+            ->assertJsonPath('data.0.rooms.0.room.id', 10);
+
+        Http::assertSentCount(3);
     }
 }

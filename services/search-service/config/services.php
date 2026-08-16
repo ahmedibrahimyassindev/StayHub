@@ -43,4 +43,8 @@ return [
         'url' => env('INVENTORY_SERVICE_URL', 'http://inventory-service:8000'),
     ],
 
+    'search' => [
+        'cache_ttl' => env('SEARCH_CACHE_TTL', 30),
+    ],
+
 ];

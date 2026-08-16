@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
 class HotelSearchController extends Controller
@@ -22,6 +23,31 @@ class HotelSearchController extends Controller
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
         ]);
 
+        $cacheKey = $this->cacheKey($validated);
+        $cached = Cache::store(config('cache.default'))->get($cacheKey);
+
+        if ($cached !== null) {
+            $cached['meta']['cache_hit'] = true;
+
+            return response()->json($cached);
+        }
+
+        $response = $this->buildSearchResponse($validated);
+
+        if ($response instanceof JsonResponse) {
+            return $response;
+        }
+
+        Cache::store(config('cache.default'))->put($cacheKey, $response, now()->addSeconds((int) config('services.search.cache_ttl', 30)));
+
+        return response()->json($response);
+    }
+
+    /**
+     * @param array<string, mixed> $validated
+     */
+    private function buildSearchResponse(array $validated): JsonResponse|array
+    {
         $hotels = $this->getHotels($validated);
 
         if ($hotels instanceof JsonResponse) {
@@ -64,13 +90,14 @@ class HotelSearchController extends Controller
             }
         }
 
-        return response()->json([
+        return [
             'data' => $results,
             'meta' => [
                 'hotels_checked' => count($hotels['data'] ?? []),
                 'hotels_available' => count($results),
+                'cache_hit' => false,
             ],
-        ]);
+        ];
     }
 
     /**
@@ -169,5 +196,15 @@ class HotelSearchController extends Controller
         }
 
         return true;
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function cacheKey(array $filters): string
+    {
+        ksort($filters);
+
+        return 'search:hotels:' . sha1(json_encode($filters, JSON_THROW_ON_ERROR));
     }
 }

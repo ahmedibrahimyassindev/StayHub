@@ -2,7 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
+use App\Models\RoomInventory;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -15,11 +16,35 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $startDate = CarbonImmutable::now()->addDay();
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        foreach ([1, 2, 3] as $roomId) {
+            for ($offset = 0; $offset < 30; $offset++) {
+                $date = $startDate->addDays($offset)->toDateString();
+                $totalRooms = match ($roomId) {
+                    1 => 10,
+                    2 => 4,
+                    default => 6,
+                };
+
+                RoomInventory::query()->updateOrCreate(
+                    [
+                        'room_id' => $roomId,
+                        'date' => $date,
+                    ],
+                    [
+                        'total_rooms' => $totalRooms,
+                        'available_rooms' => $totalRooms,
+                        'reserved_rooms' => 0,
+                        'price' => match ($roomId) {
+                            1 => 180.00,
+                            2 => 320.00,
+                            default => 260.00,
+                        },
+                        'currency' => 'USD',
+                    ],
+                );
+            }
+        }
     }
 }

@@ -99,6 +99,10 @@ All demo users use password `password`.
 - `manager`
 - `admin`
 
+## Production Readiness
+
+See `docs/production-readiness.md` for the remaining production configuration: secrets, real payment provider, service-to-service security, Kafka workers, deployment, observability, and backups.
+
 ## Main APIs
 
 All non-health routes are protected by APISIX OpenID Connect.

@@ -54,6 +54,12 @@ http://localhost:8081
 
 The OpenAPI contract is stored at `docs/openapi.yaml` and is served by Swagger UI at `http://localhost:8081/openapi.yaml`.
 
+Publish pending booking outbox events to Kafka:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\infrastructure\kafka\publish-booking-outbox.ps1 -Limit 50
+```
+
 ## CI/CD
 
 GitHub Actions workflows live in `.github/workflows`.

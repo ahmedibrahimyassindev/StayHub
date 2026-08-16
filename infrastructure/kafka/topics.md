@@ -27,3 +27,11 @@ Current booking workflow events:
 - `booking.cancelled` on `booking-events`
 - `booking.payment_failed` on `booking-events`
 - `notification.requested` on `notification-events`
+
+Publish pending booking outbox messages to real Kafka locally:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\infrastructure\kafka\publish-booking-outbox.ps1 -Limit 50
+```
+
+The script reads pending rows from `stayhub-booking-db`, sends each payload through `kafka-console-producer` in `stayhub-kafka`, then marks the row `published` only after the producer exits successfully.

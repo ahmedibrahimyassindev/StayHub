@@ -2,7 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
+use App\Models\Payment;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -15,11 +15,16 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+        Payment::query()->firstOrCreate([
+            'provider_reference' => 'mock_seed_payment_1',
+        ], [
+            'booking_id' => 1,
+            'user_id' => 1,
+            'amount' => 210.00,
+            'currency' => 'USD',
+            'status' => Payment::STATUS_SUCCEEDED,
+            'provider' => 'mock',
+            'paid_at' => now(),
         ]);
     }
 }

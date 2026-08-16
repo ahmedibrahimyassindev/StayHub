@@ -56,6 +56,16 @@ foreach ($route in $routes) {
                 ssl_verify = $false
                 timeout = 10
             }
+            'proxy-rewrite' = @{
+                headers = @{
+                    remove = @(
+                        'X-StayHub-User-Id',
+                        'X-StayHub-Roles',
+                        'X-User-Id',
+                        'X-User-Roles'
+                    )
+                }
+            }
         }
     }
 

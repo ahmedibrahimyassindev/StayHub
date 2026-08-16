@@ -11,9 +11,9 @@ use App\Services\CreateBookingAction;
 use App\Services\InventoryClient;
 use App\Services\OutboxRecorder;
 use App\Services\PaymentClient;
+use App\Security\IdentityResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 class BookingController extends Controller
@@ -23,6 +23,7 @@ class BookingController extends Controller
         private readonly InventoryClient $inventory,
         private readonly PaymentClient $payment,
         private readonly OutboxRecorder $outbox,
+        private readonly IdentityResolver $identityResolver,
     ) {
     }
 
@@ -30,14 +31,14 @@ class BookingController extends Controller
     {
         $validated = $request->validated();
 
-        $identity = $this->identity($request);
+        $identity = $this->identityResolver->resolve($request);
 
         if ($identity instanceof JsonResponse) {
             return $identity;
         }
 
         $bookings = Booking::query()
-            ->when(! $identity['can_manage'], fn ($query) => $query->where('user_id', $identity['user_id']))
+            ->when(! $identity->canManageBookings(), fn ($query) => $query->where('user_id', $identity->userId()))
             ->when($validated['hotel_id'] ?? null, fn ($query, $hotelId) => $query->where('hotel_id', $hotelId))
             ->when($validated['room_id'] ?? null, fn ($query, $roomId) => $query->where('room_id', $roomId))
             ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
@@ -51,7 +52,7 @@ class BookingController extends Controller
     {
         $validated = $request->validated();
 
-        $identity = $this->identity($request);
+        $identity = $this->identityResolver->resolve($request);
 
         if ($identity instanceof JsonResponse) {
             return $identity;
@@ -62,14 +63,14 @@ class BookingController extends Controller
 
         return $this->createBooking->execute(
             $validated,
-            $identity['user_id'],
+            $identity->userId(),
             $request->headers->get('Idempotency-Key'),
         );
     }
 
     public function show(Request $request, Booking $booking): JsonResponse
     {
-        $authorization = $this->authorizeBookingAccess($request, $booking);
+        $authorization = $this->identityResolver->authorizeBookingAccess($request, $booking->user_id);
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -82,7 +83,7 @@ class BookingController extends Controller
 
     public function cancel(Request $request, Booking $booking): JsonResponse
     {
-        $authorization = $this->authorizeBookingAccess($request, $booking);
+        $authorization = $this->identityResolver->authorizeBookingAccess($request, $booking->user_id);
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -132,7 +133,7 @@ class BookingController extends Controller
 
     public function confirmPayment(Request $request, Booking $booking): JsonResponse
     {
-        $authorization = $this->authorizeBookingAccess($request, $booking);
+        $authorization = $this->identityResolver->authorizeBookingAccess($request, $booking->user_id);
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -188,7 +189,7 @@ class BookingController extends Controller
 
     public function failPayment(FailBookingPaymentRequest $request, Booking $booking): JsonResponse
     {
-        $authorization = $this->authorizeBookingAccess($request, $booking);
+        $authorization = $this->identityResolver->authorizeBookingAccess($request, $booking->user_id);
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -283,91 +284,6 @@ class BookingController extends Controller
             'type' => $event->type,
             'status' => $event->status,
         ];
-    }
-
-    /**
-     * @return JsonResponse|array{user_id: int, roles: list<string>, can_manage: bool}
-     */
-    private function identity(Request $request): JsonResponse|array
-    {
-        $userId = $request->headers->get('X-StayHub-User-Id')
-            ?? $request->headers->get('X-User-Id')
-            ?? Arr::get($this->jwtClaims($request), 'stayhub_user_id')
-            ?? Arr::get($this->jwtClaims($request), 'user_id');
-
-        if ($userId === null) {
-            $username = Arr::get($this->jwtClaims($request), 'preferred_username');
-            $userId = match ($username) {
-                'customer' => 1,
-                'manager' => 2,
-                'admin' => 3,
-                default => null,
-            };
-        }
-
-        if (! is_numeric($userId) || (int) $userId < 1) {
-            return response()->json([
-                'message' => 'Authenticated user identity is required.',
-            ], 401);
-        }
-
-        $rolesHeader = $request->headers->get('X-StayHub-Roles') ?? $request->headers->get('X-User-Roles');
-        $roles = $rolesHeader
-            ? array_map('trim', explode(',', $rolesHeader))
-            : (array) Arr::get($this->jwtClaims($request), 'realm_access.roles', []);
-
-        return [
-            'user_id' => (int) $userId,
-            'roles' => array_values(array_filter($roles)),
-            'can_manage' => count(array_intersect($roles, ['admin', 'manager'])) > 0,
-        ];
-    }
-
-    private function authorizeBookingAccess(Request $request, Booking $booking): ?JsonResponse
-    {
-        $identity = $this->identity($request);
-
-        if ($identity instanceof JsonResponse) {
-            return $identity;
-        }
-
-        if (! $identity['can_manage'] && $booking->user_id !== $identity['user_id']) {
-            return response()->json([
-                'message' => 'You are not allowed to access this booking.',
-            ], 403);
-        }
-
-        return null;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function jwtClaims(Request $request): array
-    {
-        $authorization = $request->bearerToken();
-
-        if ($authorization === null) {
-            return [];
-        }
-
-        $parts = explode('.', $authorization);
-
-        if (count($parts) < 2) {
-            return [];
-        }
-
-        $payload = strtr($parts[1], '-_', '+/');
-        $payload .= str_repeat('=', (4 - strlen($payload) % 4) % 4);
-        $decoded = base64_decode($payload, true);
-
-        if ($decoded === false) {
-            return [];
-        }
-
-        $claims = json_decode($decoded, true);
-
-        return is_array($claims) ? $claims : [];
     }
 
 }

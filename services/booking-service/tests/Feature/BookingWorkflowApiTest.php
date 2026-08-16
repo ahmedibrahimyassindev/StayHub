@@ -14,6 +14,13 @@ class BookingWorkflowApiTest extends TestCase
 
     private const CORRELATION_ID = '8da4c069-f0f4-4c95-b8d2-46043f23c8d1';
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config(['services.keycloak.allow_test_identity_headers' => true]);
+    }
+
     public function test_booking_creation_reserves_inventory_creates_payment_and_notification(): void
     {
         config([
@@ -42,7 +49,7 @@ class BookingWorkflowApiTest extends TestCase
             'check_out' => '2026-09-03',
             'quantity' => 1,
         ], [
-            'X-StayHub-User-Id' => '1',
+            'X-Test-User-Id' => '1',
             'X-Correlation-ID' => self::CORRELATION_ID,
         ])->assertCreated()
             ->assertHeader('X-Correlation-ID', self::CORRELATION_ID)
@@ -112,7 +119,7 @@ class BookingWorkflowApiTest extends TestCase
             'quantity' => 1,
         ];
         $headers = [
-            'X-StayHub-User-Id' => '1',
+            'X-Test-User-Id' => '1',
             'Idempotency-Key' => 'booking-create-1',
         ];
 
@@ -154,7 +161,7 @@ class BookingWorkflowApiTest extends TestCase
             'check_out' => '2026-09-02',
             'quantity' => 1,
         ], [
-            'X-StayHub-User-Id' => '1',
+            'X-Test-User-Id' => '1',
         ])->assertConflict();
 
         $this->assertDatabaseCount('bookings', 0);
@@ -192,7 +199,7 @@ class BookingWorkflowApiTest extends TestCase
             'check_out' => '2026-09-02',
             'quantity' => 1,
         ], [
-            'X-StayHub-User-Id' => '1',
+            'X-Test-User-Id' => '1',
         ])->assertStatus(502);
 
         $this->assertDatabaseHas('bookings', [
@@ -238,7 +245,7 @@ class BookingWorkflowApiTest extends TestCase
         $this->postJson("/api/bookings/{$booking->id}/fail-payment", [
             'failure_reason' => 'Card declined',
         ], [
-            'X-StayHub-User-Id' => '1',
+            'X-Test-User-Id' => '1',
         ])->assertOk()
             ->assertJsonPath('data.booking.status', Booking::STATUS_PAYMENT_FAILED)
             ->assertJsonPath('data.payment.status', 'failed')
@@ -292,7 +299,7 @@ class BookingWorkflowApiTest extends TestCase
         $this->postJson("/api/bookings/{$booking->id}/fail-payment", [
             'failure_reason' => 'Card declined',
         ], [
-            'X-StayHub-User-Id' => '1',
+            'X-Test-User-Id' => '1',
         ])->assertStatus(502);
 
         $this->assertDatabaseHas('bookings', [
@@ -357,6 +364,23 @@ class BookingWorkflowApiTest extends TestCase
             ->assertJsonPath('message', 'Authenticated user identity is required.');
     }
 
+    public function test_spoofed_identity_headers_are_ignored_without_test_bypass(): void
+    {
+        config(['services.keycloak.allow_test_identity_headers' => false]);
+
+        $this->postJson('/api/bookings', [
+            'hotel_id' => 1,
+            'room_id' => 1,
+            'check_in' => '2026-09-01',
+            'check_out' => '2026-09-03',
+            'quantity' => 1,
+        ], [
+            'X-StayHub-User-Id' => '1',
+            'X-StayHub-Roles' => 'manager',
+        ])->assertUnauthorized()
+            ->assertJsonPath('message', 'Authenticated user identity is required.');
+    }
+
     public function test_customer_cannot_view_another_users_booking(): void
     {
         $booking = Booking::query()->create([
@@ -372,7 +396,7 @@ class BookingWorkflowApiTest extends TestCase
         ]);
 
         $this->getJson("/api/bookings/{$booking->id}", [
-            'X-StayHub-User-Id' => '2',
+            'X-Test-User-Id' => '2',
         ])->assertForbidden()
             ->assertJsonPath('message', 'You are not allowed to access this booking.');
     }
@@ -392,8 +416,8 @@ class BookingWorkflowApiTest extends TestCase
         ]);
 
         $this->getJson("/api/bookings/{$booking->id}", [
-            'X-StayHub-User-Id' => '2',
-            'X-StayHub-Roles' => 'manager',
+            'X-Test-User-Id' => '2',
+            'X-Test-Roles' => 'manager',
         ])->assertOk()
             ->assertJsonPath('data.id', $booking->id);
     }

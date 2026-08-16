@@ -52,3 +52,4 @@ Implemented domains:
 
 - `hotel-service`: hotels and rooms tables, models, factories, seed data, and CRUD/list APIs.
 - `inventory-service`: room availability table, seed data, list/upsert APIs, and reservation-safe reserve/release APIs.
+- `booking-service`: bookings table, create/list/show/cancel APIs, and inventory reservation/release coordination.

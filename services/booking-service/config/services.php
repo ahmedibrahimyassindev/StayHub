@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'inventory' => [
+        'url' => env('INVENTORY_SERVICE_URL', 'http://inventory-service:8000'),
+    ],
+
 ];

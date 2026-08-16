@@ -2,23 +2,21 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\InventoryIndexRequest;
+use App\Http\Requests\ReleaseInventoryRequest;
+use App\Http\Requests\ReserveInventoryRequest;
+use App\Http\Requests\UpsertInventoryRequest;
 use App\Models\RoomInventory;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class RoomInventoryController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function index(InventoryIndexRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'room_id' => ['sometimes', 'integer', 'min:1'],
-            'date_from' => ['sometimes', 'date'],
-            'date_to' => ['sometimes', 'date', 'after_or_equal:date_from'],
-            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
-        ]);
+        $validated = $request->validated();
 
         $inventory = RoomInventory::query()
             ->when($validated['room_id'] ?? null, fn ($query, $roomId) => $query->where('room_id', $roomId))
@@ -31,17 +29,9 @@ class RoomInventoryController extends Controller
         return response()->json($inventory);
     }
 
-    public function upsert(Request $request): JsonResponse
+    public function upsert(UpsertInventoryRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'room_id' => ['required', 'integer', 'min:1'],
-            'date' => ['required', 'date'],
-            'total_rooms' => ['required', 'integer', 'min:0'],
-            'available_rooms' => ['required', 'integer', 'min:0'],
-            'reserved_rooms' => ['sometimes', 'integer', 'min:0'],
-            'price' => ['required', 'numeric', 'min:0'],
-            'currency' => ['required', 'string', 'size:3'],
-        ]);
+        $validated = $request->validated();
 
         $reservedRooms = $validated['reserved_rooms'] ?? 0;
 
@@ -70,14 +60,9 @@ class RoomInventoryController extends Controller
         ]);
     }
 
-    public function reserve(Request $request): JsonResponse
+    public function reserve(ReserveInventoryRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'room_id' => ['required', 'integer', 'min:1'],
-            'check_in' => ['required', 'date'],
-            'check_out' => ['required', 'date', 'after:check_in'],
-            'quantity' => ['sometimes', 'integer', 'min:1', 'max:50'],
-        ]);
+        $validated = $request->validated();
 
         $quantity = $validated['quantity'] ?? 1;
         $dates = $this->nightsBetween($validated['check_in'], $validated['check_out']);
@@ -122,14 +107,9 @@ class RoomInventoryController extends Controller
         ]);
     }
 
-    public function release(Request $request): JsonResponse
+    public function release(ReleaseInventoryRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'room_id' => ['required', 'integer', 'min:1'],
-            'check_in' => ['required', 'date'],
-            'check_out' => ['required', 'date', 'after:check_in'],
-            'quantity' => ['sometimes', 'integer', 'min:1', 'max:50'],
-        ]);
+        $validated = $request->validated();
 
         $quantity = $validated['quantity'] ?? 1;
         $dates = $this->nightsBetween($validated['check_in'], $validated['check_out']);

@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Enums\BookingStatus;
+use App\Http\Requests\BookingIndexRequest;
+use App\Http\Requests\FailBookingPaymentRequest;
+use App\Http\Requests\StoreBookingRequest;
 use App\Models\Booking;
 use App\Services\CreateBookingAction;
 use App\Services\InventoryClient;
@@ -12,7 +15,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 
 class BookingController extends Controller
 {
@@ -24,14 +26,9 @@ class BookingController extends Controller
     ) {
     }
 
-    public function index(Request $request): JsonResponse
+    public function index(BookingIndexRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'hotel_id' => ['sometimes', 'integer', 'min:1'],
-            'room_id' => ['sometimes', 'integer', 'min:1'],
-            'status' => ['sometimes', Rule::in($this->statuses())],
-            'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
-        ]);
+        $validated = $request->validated();
 
         $identity = $this->identity($request);
 
@@ -50,15 +47,9 @@ class BookingController extends Controller
         return response()->json($bookings);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(StoreBookingRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'hotel_id' => ['required', 'integer', 'min:1'],
-            'room_id' => ['required', 'integer', 'min:1'],
-            'check_in' => ['required', 'date'],
-            'check_out' => ['required', 'date', 'after:check_in'],
-            'quantity' => ['sometimes', 'integer', 'min:1', 'max:50'],
-        ]);
+        $validated = $request->validated();
 
         $identity = $this->identity($request);
 
@@ -195,7 +186,7 @@ class BookingController extends Controller
         ]);
     }
 
-    public function failPayment(Request $request, Booking $booking): JsonResponse
+    public function failPayment(FailBookingPaymentRequest $request, Booking $booking): JsonResponse
     {
         $authorization = $this->authorizeBookingAccess($request, $booking);
 
@@ -215,9 +206,7 @@ class BookingController extends Controller
             ], 422);
         }
 
-        $validated = $request->validate([
-            'failure_reason' => ['sometimes', 'string', 'max:255'],
-        ]);
+        $validated = $request->validated();
 
         if ($booking->payment_id === null) {
             return response()->json([
@@ -381,13 +370,4 @@ class BookingController extends Controller
         return is_array($claims) ? $claims : [];
     }
 
-    /**
-     * @return list<string>
-     */
-    private function statuses(): array
-    {
-        return [
-            ...BookingStatus::values(),
-        ];
-    }
 }
